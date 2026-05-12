@@ -1,7 +1,16 @@
+import base64
+import io
 import platform
 import os
 import ctypes
+import time
 from core.protocol import LinkFlowProtocol
+
+try:
+    from PIL import Image, ImageGrab
+except ImportError:
+    Image = None
+    ImageGrab = None
 
 class MonitorService:
     """
@@ -64,7 +73,24 @@ class MonitorService:
     @staticmethod
     def get_screen_snapshot():
         """
-        获取屏幕快照预览逻辑（占位）
-        后续可引入 pyautogui 实现实时截屏预览
+        获取屏幕快照
+        返回 base64 编码的 PNG 图片 + 时间戳 + 尺寸
         """
-        pass
+        if ImageGrab is None or Image is None:
+            return {"error": "SCREENSHOT_UNAVAILABLE", "message": "Pillow not installed"}
+
+        try:
+            # 截取整个屏幕
+            screenshot = ImageGrab.grab()
+            buffer = io.BytesIO()
+            screenshot.save(buffer, format="PNG")
+            data_b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+            return {
+                "data_b64": data_b64,
+                "timestamp": int(time.time()),
+                "width": screenshot.width,
+                "height": screenshot.height,
+            }
+        except Exception as e:
+            return {"error": "SCREENSHOT_FAIL", "message": str(e)}

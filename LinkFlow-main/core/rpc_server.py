@@ -7,8 +7,14 @@ import uuid
 
 from core.monitor_service import MonitorService
 from core.file_service import FileService
+from core.clipboard_service import ClipboardService
+from core.upload_service import UploadService
+from core.audit_service import AuditService
 from core.rpc_crypto import AesGcmCipher, parse_key_b64
 from core.rpc_framer import LengthPrefixedFramer
+
+# Module-level 单例，避免每次请求都 new ClipboardService
+_clipboard_svc = ClipboardService(on_update_callback=lambda _: None)
 
 
 class LinkFlowRpcServer:
@@ -179,6 +185,63 @@ class LinkFlowRpcServer:
         if method == "sys.heartbeat":
             return self._result(req_id, {"ts": int(time.time())}), False, None
 
+        # === Module-D 新增方法 ===
+
+        if method == "clipboard.get":
+            text = _clipboard_svc.get_clipboard_text()
+            return self._result(req_id, {"text": text}), False, None
+
+        if method == "screen.snapshot":
+            result = MonitorService.get_screen_snapshot()
+            if "error" in result:
+                return self._error(req_id, -32012, result["error"]), False, None
+            return self._result(req_id, result), False, None
+
+        if method == "file.upload_init":
+            path = params.get("path")
+            total_chunks = int(params.get("total_chunks", 1))
+            if not path:
+                return self._error(req_id, -32013, "PATH_REQUIRED"), False, None
+            try:
+                upload_id = UploadService.create_session(path, total_chunks)
+            except ValueError as e:
+                return self._error(req_id, -32018, str(e)), False, None
+            AuditService.log("PC", "upload.init", "started", {"upload_id": upload_id, "path": path, "total_chunks": total_chunks})
+            return self._result(req_id, {"upload_id": upload_id}), False, None
+
+        if method == "file.upload_chunk":
+            upload_id = params.get("upload_id")
+            chunk_index = int(params.get("chunk_index", 0))
+            data_b64 = params.get("data_b64", "")
+            if not upload_id:
+                return self._error(req_id, -32013, "UPLOAD_ID_REQUIRED"), False, None
+            try:
+                data = base64.b64decode(data_b64)
+            except Exception:
+                return self._error(req_id, -32014, "INVALID_DATA"), False, None
+            ok = UploadService.receive_chunk(upload_id, chunk_index, data)
+            if not ok:
+                return self._error(req_id, -32015, "CHUNK_RECEIVE_FAIL"), False, None
+            return self._result(req_id, {"ok": True, "chunk_index": chunk_index}), False, None
+
+        if method == "file.upload_commit":
+            upload_id = params.get("upload_id")
+            if not upload_id:
+                return self._error(req_id, -32013, "UPLOAD_ID_REQUIRED"), False, None
+            commit_result = UploadService.commit_session(upload_id)
+            if not commit_result.get("ok"):
+                AuditService.log("PC", "upload.commit", "failed", {"upload_id": upload_id, "error": commit_result.get("error_code")})
+                return self._error(req_id, -32016, commit_result.get("error_code", "COMMIT_FAIL")), False, None
+            AuditService.log("PC", "upload.commit", "ok", {"upload_id": upload_id, "path": commit_result.get("path")})
+            return self._result(req_id, commit_result), False, None
+
+        if method == "audit.query":
+            start_ts = int(params.get("start_ts", 0))
+            end_ts = int(params.get("end_ts", 0))
+            limit = int(params.get("limit", 100))
+            logs = AuditService.query(start_ts, end_ts, limit)
+            return self._result(req_id, {"logs": logs, "count": len(logs)}), False, None
+
         return self._error(req_id, -32601, "METHOD_NOT_FOUND"), False, None
 
     def _result(self, req_id, result):
@@ -186,4 +249,3 @@ class LinkFlowRpcServer:
 
     def _error(self, req_id, code, message):
         return json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}).encode("utf-8")
-

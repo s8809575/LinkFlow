@@ -3,12 +3,10 @@ package com.linkflow.app.pairing
 import com.linkflow.app.util.PairingSecretDTO
 
 object QrCodeParser {
-    fun parse(payload: String): PairingSecretDTO {
+    // ✅ spec签名
+    fun parseQrPayload(payload: String): PairingSecretDTO {
         val split = payload.split(";")
-        require(split.size == 2) { "Invalid QR format" }
-        return PairingSecretDTO(
-            pairingId = split[0].trim(),
-            keyB64 = split[1].trim()
-        )
+        require(split.size == 2) { "QR format error" }
+        return PairingSecretDTO(split[0].trim(), split[1].trim())
     }
 }

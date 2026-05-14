@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubConnector Pro - Industrial Control</title>
+    <style>
+        :root {
+            /* 工业级冷调配色系统 */
+            --bg-base: #f4f7fa;
+            --glass-card: rgba(255, 255, 255, 0.75);
+            --primary-accent: #0071e3;
+            --success-glow: #34c759;
+            --warning-glow: #ff9500;
+            --text-main: #1d1d1f;
+            --text-mute: #86868b;
+            --radius-xl: 30px;
+            --radius-lg: 20px;
+            --shadow-soft: 0 10px 40px rgba(0,0,0,0.04);
+            --font-stack: -apple-system, "SF Pro Display", "PingFang SC", sans-serif;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: var(--font-stack);
+            background-color: #d1d9e6;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; margin: 0; color: var(--text-main);
+            letter-spacing: -0.015em;
+        }
+
+        /* 硬件外壳模拟 */
+        .phone-frame {
+            width: 390px; height: 844px;
+            background: var(--bg-base);
+            border: 12px solid #1c1c1e; border-radius: 54px;
+            position: relative; overflow: hidden;
+            box-shadow: 0 50px 100px -20px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column;
+        }
+
+        /* 顶部状态与标题 */
+        .app-header { padding: 45px 28px 15px; }
+        .system-status { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .conn-indicator {
+            font-size: 11px; font-weight: 700; color: var(--success-glow);
+            background: rgba(52, 199, 89, 0.12); padding: 5px 12px; border-radius: 20px;
+            box-shadow: inset 0 0 0 1px rgba(52, 199, 89, 0.1);
+        }
+
+        /* 工业级监控卡片：专业图表化占位 */
+        .dashboard-container {
+            padding: 0 24px; margin-bottom: 28px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+            border-radius: var(--radius-lg); padding: 22px;
+            box-shadow: var(--shadow-soft); border: 1px solid rgba(255,255,255,0.8);
+        }
+        .monitor-row { margin-bottom: 18px; }
+        .monitor-info { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+        .track { height: 7px; background: #eaedf2; border-radius: 10px; overflow: hidden; }
+        .track-fill { 
+            height: 100%; border-radius: 10px; 
+            transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1); 
+        }
+
+        /* 功能模块网格：动态呼吸感 */
+        .module-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 24px; margin-bottom: 30px;
+        }
+        .module-tile {
+            background: #fff; border-radius: var(--radius-lg); padding: 24px 15px;
+            text-align: center; cursor: pointer; transition: all 0.3s ease;
+            box-shadow: var(--shadow-soft); border: 1px solid transparent;
+        }
+        .module-tile:hover { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(0,0,0,0.08); border-color: rgba(0,113,227,0.1); }
+        .module-tile:active { transform: scale(0.94); background: #fcfcfc; }
+        .module-tile i { font-size: 34px; display: block; margin-bottom: 12px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.05)); }
+        .module-tile span { font-size: 14px; font-weight: 600; }
+
+        /* 最近活动列表 */
+        .section-header { padding: 0 28px; font-size: 17px; font-weight: 700; margin-bottom: 15px; }
+        .activity-stream { flex: 1; overflow-y: auto; padding: 0 24px 20px; }
+        .activity-card {
+            background: #fff; padding: 16px 20px; border-radius: var(--radius-md);
+            margin-bottom: 12px; display: flex; align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02); transition: 0.2s;
+        }
+        .activity-card:active { background: #f2f2f7; }
+
+        /* 磨砂玻璃 Overlay 增强交互 */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.85); z-index: 100; display: none;
+            flex-direction: column; backdrop-filter: blur(25px) saturate(180%);
+            animation: overlay-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes overlay-slide-up { from { transform: translateY(100%); opacity: 0.5; } to { transform: translateY(0); opacity: 1; } }
+
+        /* 文件管理器专门美化 */
+        .file-explorer-head { padding: 50px 24px 20px; background: rgba(255,255,255,0.4); border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .path-bar-ios {
+            background: rgba(0,0,0,0.04); padding: 12px 16px; border-radius: 14px;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 13px; font-weight: 500; cursor: pointer;
+        }
+
+        .back-nav { color: var(--primary-accent); font-weight: 600; font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+
+        /* 下拉路径菜单 */
+        .path-menu {
+            position: absolute; top: 125px; left: 24px; right: 24px;
+            background: #fff; border-radius: 18px; box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+            display: none; z-index: 110; overflow: hidden;
+        }
+        .path-option { padding: 15px 20px; font-size: 14px; border-bottom: 1px solid #f2f2f7; cursor: pointer; }
+        .path-option:hover { background: #f5f5f7; color: var(--primary-accent); }
+
+        /* 通用关闭按钮 */
+        .btn-circle-close {
+            position: absolute; top: 50px; right: 24px; width: 34px; height: 34px;
+            background: rgba(0,0,0,0.05); border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; font-weight: bold; cursor: pointer;
+        }
+
+        /* 升级版 Toast */
+        #toast {
+            position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+            background: rgba(29, 29, 31, 0.9); color: #fff; padding: 12px 28px;
+            border-radius: 30px; font-size: 13px; font-weight: 500; display: none;
+            backdrop-filter: blur(10px); z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+
+<div class="phone-frame">
+    <div id="toast">同步成功</div>
+
+    <div class="app-header">
+        <div class="system-status">
+            <span style="font-size: 16px; font-weight: 700;">19:28</span>
+            <div class="conn-indicator">● HubConnected</div>
+        </div>
+        <h1 style="margin:0; font-size: 32px; letter-spacing: -1.2px;">PC 状态</h1>
+        <p style="margin: 5px 0 0; font-size: 13px; color: var(--text-mute);">已连接：Office-Workstation-X86</p>
+    </div>
+
+    <div class="dashboard-container">
+        <div class="stat-card">
+            <div class="monitor-row">
+                <div class="monitor-info"><span>PC 剩余电量</span><span style="color:var(--warning-glow)">85%</span></div>
+                <div class="track"><div class="track-fill" style="width:85%; background: linear-gradient(90deg, #ff9500, #ffcc00);"></div></div>
+            </div>
+            <div class="monitor-row" style="margin-bottom:0;">
+                <div class="monitor-info"><span>CPU 负载频率</span><span style="color:var(--primary-accent)" id="cpu-val">23%</span></div>
+                <div class="track"><div id="cpu-bar" class="track-fill" style="width:23%; background: linear-gradient(90deg, #0071e3, #3399ff);"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="module-grid">
+        <div class="module-tile" onclick="openFileManager()"><i>📂</i><span>文件传输</span></div>
+        <div class="module-tile" onclick="triggerToast('剪贴板已实时同步至 PC')"><i>📋</i><span>剪贴板同步</span></div>
+        <div class="module-tile" onclick="openOverlay('view-screen')"><i>📸</i><span>远程监控</span></div>
+        <div class="module-tile" onclick="openOverlay('view-ctrl')"><i>⚡</i><span>应急控制</span></div>
+    </div>
+
+    <div class="section-header">最近活动记录</div>
+    <div class="activity-stream">
+        <div class="activity-card">
+            <span style="font-size: 24px; margin-right: 15px;">🎬</span>
+            <div style="flex:1;"><div style="font-size:15px; font-weight:500;">演示视频_最终版.mp4</div><div style="font-size:11px; color:var(--text-mute);">2.4GB · 32分钟前</div></div>
+            <span style="color:var(--text-mute);">›</span>
+        </div>
+        <div class="activity-card">
+            <span style="font-size: 24px; margin-right: 15px;">🎨</span>
+            <div style="flex:1;"><div style="font-size:15px; font-weight:500;">设计稿_V2.fig</div><div style="font-size:11px; color:var(--text-mute);">45MB · 2小时前</div></div>
+            <span style="color:var(--text-mute);">›</span>
+        </div>
+    </div>
+
+    <div id="file-overlay" class="overlay">
+        <div class="file-explorer-head">
+            <div class="back-nav" onclick="handleBack()">‹ 返回</div>
+            <h2 style="margin:15px 0 10px; font-size:24px;">远程文件管理器</h2>
+            <div class="path-bar-ios" onclick="togglePathMenu()">
+                <span id="current-path-display">C:/Users/Admin/Desktop</span>
+                <span style="font-size: 10px; color:var(--text-mute);">▼</span>
+            </div>
+        </div>
+        
+        <div id="path-menu" class="path-menu">
+            <div class="path-option" onclick="jumpPath('C:/')">本地磁盘 (C:)</div>
+            <div class="path-option" onclick="jumpPath('D:/Data')">数据盘 (D:/Data)</div>
+            <div class="path-option" onclick="jumpPath('C:/Users/Admin/Downloads')">下载 (Downloads)</div>
+            <div class="path-option" onclick="jumpPath('C:/Users/Admin/Desktop')">桌面 (Desktop)</div>
+        </div>
+
+        <div class="activity-stream" id="explorer-list-container" style="padding-top:20px;">
+            </div>
+    </div>
+
+    <div id="view-screen" class="overlay" style="background:#000; color:#fff; padding:60px 24px;">
+        <div class="btn-circle-close" style="background:#333;" onclick="closeOverlay('view-screen')">×</div>
+        <h3>实时监控</h3>
+        <div style="flex:1; border:1px solid #222; border-radius:24px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+             <div class="spinner"></div>
+             <p style="color:#555; margin-top:15px; font-size:14px;">已开启加密预览通道...</p>
+        </div>
+    </div>
+
+    <div id="view-ctrl" class="overlay" style="padding:60px 24px;">
+        <div class="btn-circle-close" onclick="closeOverlay('view-ctrl')">×</div>
+        <h3>应急指令集</h3>
+        <div class="module-grid" style="padding:0; margin-top:20px;">
+            <div class="module-tile" onclick="triggerToast('指令：静音已执行')"><i>🔇</i><span>静音</span></div>
+            <div class="module-tile" onclick="triggerToast('指令：息屏已执行')"><i>📱</i><span>息屏</span></div>
+            <div class="module-tile" onclick="triggerToast('指令：进入睡眠')"><i>🌙</i><span>睡眠</span></div>
+            <div class="module-tile" onclick="triggerToast('指令：重启设备')"><i>🔄</i><span>重启</span></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 模拟文件系统数据逻辑
+    const mockFS = {
+        "C:/Users/Admin/Desktop": [
+            { name: "项目文档", type: "dir", meta: "文件夹" },
+            { name: "汇报PPT.pptx", type: "file", meta: "12MB · 昨天" },
+            { name: "main_controller.py", type: "file", meta: "12KB · 刚刚" }
+        ],
+        "C:/Users/Admin/Desktop/项目文档": [
+            { name: "app_v1.py", type: "file", meta: "4KB" },
+            { name: "素材库", type: "dir", meta: "文件夹" }
+        ],
+        "C:/": [
+            { name: "Users", type: "dir", meta: "系统目录" },
+            { name: "Program Files", type: "dir", meta: "程序目录" }
+        ]
+    };
+
+    let pathStack = ["C:/Users/Admin/Desktop"];
+
+    function openFileManager() {
+        document.getElementById('file-overlay').style.display = 'flex';
+        renderExplorer();
+    }
+
+    function closeOverlay(id) { document.getElementById(id).style.display = 'none'; }
+    function openOverlay(id) { document.getElementById(id).style.display = 'flex'; }
+
+    function handleBack() {
+        if (pathStack.length > 1) {
+            pathStack.pop();
+            renderExplorer();
+        } else {
+            closeOverlay('file-overlay');
+        }
+    }
+
+    function renderExplorer() {
+        const currentPath = pathStack[pathStack.length - 1];
+        document.getElementById('current-path-display').innerText = currentPath;
+        const container = document.getElementById('explorer-list-container');
+        const items = mockFS[currentPath] || [{ name: "空目录", type: "none", meta: "" }];
+
+        container.innerHTML = items.map(item => `
+            <div class="activity-card" onclick="${item.type === 'dir' ? `enterDir('${item.name}')` : ''}">
+                <span style="font-size: 22px; margin-right: 15px;">${item.type === 'dir' ? '📁' : '📄'}</span>
+                <div style="flex:1;">
+                    <div style="font-size:15px; font-weight:500;">${item.name}</div>
+                    <div style="font-size:11px; color:var(--text-mute);">${item.meta}</div>
+                </div>
+                ${item.type === 'file' ? `<div style="color:var(--primary-accent); font-size:20px; padding:5px;" onclick="event.stopPropagation(); triggerToast('正在下载 ${item.name}...')">📥</div>` : `<span style="color:#ccc">›</span>`}
+            </div>
+        `).join('');
+    }
+
+    function enterDir(name) {
+        const current = pathStack[pathStack.length - 1];
+        pathStack.push(current.endsWith('/') ? current + name : current + '/' + name);
+        renderExplorer();
+    }
+
+    function togglePathMenu() {
+        const menu = document.getElementById('path-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function jumpPath(path) {
+        pathStack = [path];
+        renderExplorer();
+        togglePathMenu();
+    }
+
+    function triggerToast(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 2500);
+    }
+
+    // 模拟数据流波动
+    setInterval(() => {
+        const val = Math.floor(Math.random() * 15) + 12;
+        const bar = document.getElementById('cpu-bar');
+        if(bar) {
+            bar.style.width = val + '%';
+            document.getElementById('cpu-val').innerText = val + '%';
+        }
+    }, 3000);
+</script>
+
+<style>
+    .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: var(--primary-accent); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+</body>
+</html>

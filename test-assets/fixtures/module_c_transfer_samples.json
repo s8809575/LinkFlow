@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "module": "module-C",
+  "chunk_size": 262144,
+  "generator": "byte[i] = (i * 31 + 7) & 255",
+  "samples": [
+    {
+      "name": "module_c_5mb.bin",
+      "size": 5242880,
+      "chunks": 20,
+      "md5": "6f09f74398438e23d1b3a229a955facb"
+    },
+    {
+      "name": "module_c_50mb.bin",
+      "size": 52428800,
+      "chunks": 200,
+      "md5": "c8860db22d913d7f5fc4a99c79cdfddf"
+    },
+    {
+      "name": "module_c_500mb.bin",
+      "size": 524288000,
+      "chunks": 2000,
+      "md5": "3fc5740cc45b31b72a6a004f2fed7409"
+    }
+  ]
+}

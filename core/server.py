@@ -1,0 +1,239 @@
+import socket
+import threading
+from core.protocol import LinkFlowProtocol
+import json
+import base64
+import time
+import os
+
+class LinkFlowServer:
+    def __init__(self, host='0.0.0.0', port=5000):
+        self.host = host
+        self.port = port
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.is_running = False
+        self.client_socket = None
+        self._client_last_seen = {}
+        self._client_lock = threading.Lock()
+        self.heartbeat_timeout_sec = 15
+        roots = os.getenv("LINKFLOW_ALLOWED_ROOTS", "").strip()
+        self.allowed_roots = [r.strip() for r in roots.split(";") if r.strip()] if roots else None
+
+    def start(self):
+        """启动 TCP 服务端"""
+        try:
+            self.server_socket.bind((self.host, self.port))
+            self.port = self.server_socket.getsockname()[1]
+            self.server_socket.listen(5)
+            self.is_running = True
+            print(f"[*] LinkFlow 内核启动，监听端口: {self.port}...")
+            
+            # 开启独立线程等待连接，避免阻塞主界面
+            threading.Thread(target=self._accept_loop, daemon=True).start()
+            threading.Thread(target=self._heartbeat_monitor_loop, daemon=True).start()
+        except Exception as e:
+            print(f"[!] 启动失败: {e}")
+
+    def _accept_loop(self):
+        while self.is_running:
+            try:
+                client, addr = self.server_socket.accept()
+                print(f"[+] 设备已连接: {addr}")
+                self.client_socket = client
+                with self._client_lock:
+                    self._client_last_seen[client] = time.time()
+                # 为每个连接开启处理线程
+                threading.Thread(target=self._handle_client, args=(client,), daemon=True).start()
+            except OSError:
+                break
+
+    def _handle_client(self, client):
+        """核心分发逻辑：根据协议类型分流处理"""
+        try:
+            while self.is_running:
+                try:
+                    header = client.recv(5)
+                    if not header:
+                        break
+
+                    with self._client_lock:
+                        self._client_last_seen[client] = time.time()
+
+                    msg_type, length = LinkFlowProtocol.unpack_header(header)
+
+                    payload = b""
+                    while len(payload) < length:
+                        packet = client.recv(length - len(payload))
+                        if not packet:
+                            break
+                        payload += packet
+
+                    self._dispatch_message(msg_type, payload, client)
+                except ConnectionResetError:
+                    break
+        finally:
+            with self._client_lock:
+                self._client_last_seen.pop(client, None)
+            try:
+                client.close()
+            except Exception:
+                pass
+            print("[-] 设备已断开连接")
+            if self.client_socket is client:
+                self.client_socket = None
+
+    def _dispatch_message(self, msg_type, payload, client):
+        """根据协议类型，将数据交给对应的 Service 处理"""
+        if msg_type == LinkFlowProtocol.TYPE_CLIPBOARD:
+            text = payload.decode('utf-8')
+            print(f"[剪贴板] 收到来自手机的内容: {text}")
+            from core.clipboard_service import ClipboardService
+            ClipboardService(on_update_callback=lambda _: None).set_clipboard_text(text)
+            
+        elif msg_type == LinkFlowProtocol.TYPE_CTRL_CMD:
+            from core.monitor_service import MonitorService
+            cmd = payload.decode('utf-8')
+            print(f"[指令] 正在执行系统操作: {cmd}")
+            success = MonitorService.execute_control_command(cmd)
+            # 反馈执行结果给手机
+            self.send_to_client(LinkFlowProtocol.TYPE_CTRL_CMD, {"status": "ok" if success else "fail"})
+
+        elif msg_type == LinkFlowProtocol.TYPE_FILE_LIST:
+            from core.file_service import FileService
+            # 假设手机发送过来的是一个 JSON 字符串，包含路径 {"path": "C:/"}
+            try:
+                request_data = json.loads(payload.decode('utf-8'))
+                target_path = request_data.get("path", "C:/")
+
+                if self.allowed_roots is not None and not FileService.is_path_allowed(target_path, self.allowed_roots):
+                    self._send_to_socket(client, LinkFlowProtocol.TYPE_FILE_LIST, {"error": "PATH_NOT_ALLOWED", "path": target_path})
+                    return
+                
+                # 调用文件服务获取列表
+                dir_info = FileService.get_directory_info(target_path)
+                
+                # 将结果发回手机端 (使用 0x11 类型)
+                self.send_to_client(LinkFlowProtocol.TYPE_FILE_LIST, dir_info)
+                print(f"[文件桥接] 已发送目录列表: {target_path}")
+            except Exception as e:
+                print(f"[!] 目录请求处理失败: {e}")
+
+        elif msg_type == LinkFlowProtocol.TYPE_FILE_CHUNK_REQ:
+            from core.file_service import FileService
+            try:
+                request_data = json.loads(payload.decode("utf-8"))
+                file_path = request_data.get("path")
+                offset = int(request_data.get("offset", 0))
+                chunk_size = int(request_data.get("chunk_size", 1024 * 1024))
+
+                if offset < 0:
+                    self._send_to_socket(client, LinkFlowProtocol.TYPE_FILE_DATA, {"error": "BAD_OFFSET"})
+                    return
+
+                if chunk_size <= 0:
+                    chunk_size = 1024 * 1024
+                if chunk_size > 4 * 1024 * 1024:
+                    chunk_size = 4 * 1024 * 1024
+
+                if self.allowed_roots is not None and not FileService.is_path_allowed(file_path, self.allowed_roots):
+                    self._send_to_socket(client, LinkFlowProtocol.TYPE_FILE_DATA, {"error": "PATH_NOT_ALLOWED", "path": file_path})
+                    return
+
+                chunk = FileService.read_file_chunk(file_path, offset, chunk_size=chunk_size)
+                if chunk is None:
+                    self._send_to_socket(client, LinkFlowProtocol.TYPE_FILE_DATA, {"error": "READ_FAIL", "path": file_path, "offset": offset})
+                    return
+
+                eof = len(chunk) < chunk_size
+                data_b64 = base64.b64encode(chunk).decode("ascii")
+                self._send_to_socket(
+                    client,
+                    LinkFlowProtocol.TYPE_FILE_DATA,
+                    {
+                        "path": file_path,
+                        "offset": offset,
+                        "chunk_size": chunk_size,
+                        "eof": eof,
+                        "data_b64": data_b64,
+                    },
+                )
+            except Exception as e:
+                self._send_to_socket(client, LinkFlowProtocol.TYPE_FILE_DATA, {"error": "READ_FAIL", "detail": str(e)})
+
+        elif msg_type == LinkFlowProtocol.TYPE_HEARTBEAT:
+            self._send_to_socket(client, LinkFlowProtocol.TYPE_HEARTBEAT, b"")
+                
+        # ... 其他模块后续添加
+
+    def send_to_client(self, msg_type, data):
+        """主动向手机端推送数据"""
+        if self.client_socket:
+            try:
+                packet = LinkFlowProtocol.pack(msg_type, data)
+                self.client_socket.sendall(packet)
+            except Exception as e:
+                print(f"[!] 发送失败: {e}")
+
+    def _send_to_socket(self, client, msg_type, data):
+        try:
+            client.sendall(LinkFlowProtocol.pack(msg_type, data))
+        except Exception:
+            pass
+
+    def _heartbeat_monitor_loop(self):
+        while self.is_running:
+            now = time.time()
+            stale = []
+            with self._client_lock:
+                for c, ts in list(self._client_last_seen.items()):
+                    if now - ts > self.heartbeat_timeout_sec:
+                        stale.append(c)
+
+            for c in stale:
+                try:
+                    c.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
+                try:
+                    c.close()
+                except Exception:
+                    pass
+
+            time.sleep(1)
+
+    def stop(self):
+        """关闭服务端并释放 socket（便于脚本与自动化环境退出）"""
+        self.is_running = False
+        client = self.client_socket
+        try:
+            if client:
+                try:
+                    client.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
+                try:
+                    client.close()
+                except Exception:
+                    pass
+        finally:
+            self.client_socket = None
+
+        try:
+            self.server_socket.close()
+        except Exception:
+            pass
+
+        with self._client_lock:
+            for c in list(self._client_last_seen.keys()):
+                try:
+                    c.close()
+                except Exception:
+                    pass
+            self._client_last_seen.clear()
+
+# 简易启动测试
+if __name__ == "__main__":
+    server = LinkFlowServer()
+    server.start()
+    input("按回车键停止服务...\n")

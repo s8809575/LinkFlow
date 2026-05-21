@@ -11,6 +11,9 @@ import com.linkflow.app.rpc.RpcTransport
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
@@ -19,6 +22,23 @@ import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.min
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+
+// PairingContextDTO.kt
+data class PairingContextDTO(
+    val host: String,
+    val port: Int,
+    val pairingId: String,
+    val keyB64: String
+)
+
+// RpcSessionDTO.kt
+data class RpcSessionDTO(
+    val connected: Boolean,
+    val secureChannel: Boolean,
+    val sessionId: String? = null
+)
 
 class TcpConnectionManager : RpcTransport {
     sealed class Event {
@@ -35,13 +55,13 @@ class TcpConnectionManager : RpcTransport {
     private var output: OutputStream? = null
     private var readerThread: Thread? = null
 
-    private var pairingId: String? = null
-    private var keyB64: String? = null
-    private var host: String? = null
-    private var port: Int = 8089
-
     private var framer: LengthPrefixedFramer = LengthPrefixedFramer()
     private var giveUpCallback: (() -> Unit)? = null
+
+    private var ctx: PairingContextDTO? = null
+    private var isClosed = false
+    private var isHeartbeatActive = false
+    private var currentHeartbeatInterval: Long = 30000
 
     fun initLooperThread() {
         if (thread != null) return
@@ -55,29 +75,117 @@ class TcpConnectionManager : RpcTransport {
         giveUpCallback = cb
     }
 
-    suspend fun connectAndPair(host: String, port: Int, pairingId: String, keyB64: String) {
-        this.host = host
-        this.port = port
-        this.pairingId = pairingId
-        this.keyB64 = keyB64
+    suspend fun connectAndPair(ctx: PairingContextDTO): RpcSessionDTO {
+        this.ctx = ctx
+        isClosed = false
         initLooperThread()
-        withContext(Dispatchers.IO) { connectInternal() }
+        return withContext(Dispatchers.IO) { connectAndPairInternal() }
+    }
+
+     private suspend fun connectAndPairInternal(): RpcSessionDTO {
+        establishConnection()
+        val bindResult = performPairBind()
+        if (bindResult.has("error")) {
+            closeSession()
+            val error = bindResult.getJSONObject("error")
+            throw RpcException(
+                code = error.optInt("code", -32001),
+                message = error.optString("message", "PAIR_FAIL")
+            )
+        }
+        stopReader()
+        val key = Base64.decode(ctx!!.keyB64, Base64.DEFAULT)
+        framer = LengthPrefixedFramer(cipher = AesGcmCipher(key))
+        startReader(plain = false)
+        startHeartbeat()
+        return RpcSessionDTO(
+            connected = true,
+            secureChannel = true,
+            sessionId = bindResult.optString("session_id")
+        )
+    }
+
+    private fun establishConnection() {
+        closeInternal()
+        val s = Socket()
+        s.tcpNoDelay = true
+        s.connect(InetSocketAddress(ctx!!.host, ctx!!.port), 5000)
+        socket = s
+        input = s.getInputStream()
+        output = s.getOutputStream()
+        startReader(plain = true)
+    }
+
+    private suspend fun performPairBind(): JSONObject {
+        val id = requestId.getAndIncrement()
+        val request = JSONObject().apply {
+            put("jsonrpc", "2.0")
+            put("id", id)
+            put("method", "pair.bind")
+            put("params", JSONObject().apply {
+                put("pairing_id", ctx!!.pairingId)
+                put("key_b64", ctx!!.keyB64)
+            })
+        }
+
+        val deferred = CompletableDeferred<JSONObject>()
+        inflight[id] = deferred
+
+        // 发送请求
+        sendRpc(request.toString().toByteArray(Charsets.UTF_8))
+
+        // 等待响应（5秒超时）
+        val result = withTimeoutOrNull(5000) { deferred.await() }
+            ?: throw RpcException(RpcException.TIMEOUT, "Pair bind timeout")
+
+        return result
     }
 
     override suspend fun invoke(method: String, params: JSONObject): JSONObject {
-        val id = requestId.getAndIncrement()
-        val req = JSONObject()
-            .put("jsonrpc", "2.0")
-            .put("id", id)
-            .put("method", method)
-            .put("params", params)
-        val d = CompletableDeferred<JSONObject>()
-        inflight[id] = d
-        sendRpc(req.toString().toByteArray(Charsets.UTF_8))
-        return d.await()
+        var lastException: Exception? = null
+
+        for (attempt in 1..3) {
+            try {
+                val id = requestId.getAndIncrement()
+                val request = JSONObject().apply {
+                    put("jsonrpc", "2.0")
+                    put("id", id)
+                    put("method", method)
+                    put("params", params)
+                }
+
+                val deferred = CompletableDeferred<JSONObject>()
+                inflight[id] = deferred
+
+                sendRpc(request.toString().toByteArray(Charsets.UTF_8))
+
+                // 等待响应（5秒超时）
+                val result = withTimeoutOrNull(5000) { deferred.await() }
+                    ?: throw RpcException(RpcException.TIMEOUT, "Request timeout after attempt $attempt")
+
+                // 检查是否为错误响应
+                if (result.has("error")) {
+                    val error = result.getJSONObject("error")
+                    throw RpcException(
+                        code = error.optInt("code", RpcException.SECURE_CHANNEL_REQUIRED),
+                        message = error.optString("message", "RPC_ERROR")
+                    )
+                }
+
+                return result
+
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < 3) {
+                    delay(1000L * attempt) // 线性退避重试
+                }
+            }
+        }
+
+        throw RpcException(RpcException.MAX_RETRIES, "Max retries reached", lastException)
     }
 
-    private fun connectInternal() {
+  /*  private fun connectInternal() {
         closeInternal()
         val s = Socket()
         s.tcpNoDelay = true
@@ -105,7 +213,7 @@ class TcpConnectionManager : RpcTransport {
         framer = LengthPrefixedFramer(cipher = AesGcmCipher(key))
         startReader(plain = false)
         startHeartbeat()
-    }
+    }*/
 
     private fun runBlockingAwait(d: CompletableDeferred<JSONObject>, timeoutMs: Long): JSONObject {
         val start = System.currentTimeMillis()
@@ -159,53 +267,116 @@ class TcpConnectionManager : RpcTransport {
         }.apply { isDaemon = true; start() }
     }
 
-    private fun startHeartbeat() {
+    fun startHeartbeat(intervalMs: Long = 30000) {
+        if (isHeartbeatActive || isClosed) return
+        isHeartbeatActive = true
+        currentHeartbeatInterval = intervalMs
+
         val h = handler ?: return
         var missed = 0
+
         fun tick() {
+            if (isClosed || !isHeartbeatActive) return
+
             val id = requestId.getAndIncrement()
-            val req = JSONObject().put("jsonrpc", "2.0").put("id", id).put("method", "sys.heartbeat").put("params", JSONObject())
+            val req = JSONObject().apply {
+                put("jsonrpc", "2.0")
+                put("id", id)
+                put("method", "sys.heartbeat")
+                put("params", JSONObject())
+            }
             val d = CompletableDeferred<JSONObject>()
             inflight[id] = d
+
             try {
                 sendRpc(req.toString().toByteArray(Charsets.UTF_8))
             } catch (_: Exception) {
                 missed++
             }
+
             h.postDelayed({
                 if (!d.isCompleted) missed++ else missed = 0
                 if (missed >= 2) {
+                    isHeartbeatActive = false
                     closeInternal()
                     scheduleReconnect()
                     return@postDelayed
                 }
                 tick()
-            }, 30_000)
+            }, intervalMs)
         }
+
         h.post { tick() }
     }
-
     private fun scheduleReconnect() {
-        val h = handler ?: return
+        if (isClosed) return
+
         var delayMs = 1000L
-        fun attempt(remaining: Int) {
-            if (remaining <= 0) {
+        var attempts = 0
+
+        fun attempt() {
+            if (isClosed) return
+
+            if (attempts >= 5) {
                 giveUpCallback?.invoke()
+                closeSession()
                 return
             }
-            h.postDelayed({
-                try {
-                    connectInternal()
-                } catch (_: Exception) {
-                    delayMs = min(delayMs * 2, 30_000)
-                    attempt(remaining - 1)
-                    return@postDelayed
+
+            handler?.postDelayed({
+                if (isClosed) return@postDelayed
+
+                // 启动协程执行重连
+                kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                    try {
+                        // 重新连接
+                        establishConnection()
+
+                        // 重新配对
+                        val bindResult = performPairBind()
+
+                        if (bindResult.has("error")) {
+                            throw RpcException(-32002, "Re-pair failed")
+                        }
+
+                        // 切换回加密模式
+                        withContext(Dispatchers.Main) {
+                            stopReader()
+                            val key = Base64.decode(ctx!!.keyB64, Base64.DEFAULT)
+                            framer = LengthPrefixedFramer(cipher = AesGcmCipher(key))
+                            startReader(plain = false)
+                            startHeartbeat(currentHeartbeatInterval)
+                        }
+
+                    } catch (e: Exception) {
+                        attempts++
+                        delayMs = min(delayMs * 2, 30000)
+                        attempt()
+                    }
                 }
             }, delayMs)
         }
-        attempt(5)
+
+        attempt()
     }
 
+    private fun stopReader() {
+        readerThread?.interrupt()
+        readerThread?.join(500)
+        readerThread = null
+    }
+
+    fun closeSession() {
+        isClosed = true
+        isHeartbeatActive = false
+        stopReader()
+        closeInternal()
+        handler?.removeCallbacksAndMessages(null)
+        thread?.quitSafely()
+        thread = null
+        handler = null
+        ctx = null
+    }
     private fun closeInternal() {
         try {
             socket?.close()

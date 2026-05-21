@@ -3,3 +3,7 @@ plugins {
     id "org.jetbrains.kotlin.android" version "2.0.21" apply false
 }
 
+dependencies {
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+}

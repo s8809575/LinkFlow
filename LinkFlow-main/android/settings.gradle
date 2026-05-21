@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "LinkFlow"
 include(":app")
-
+include (":模块B")

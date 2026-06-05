@@ -2,8 +2,11 @@ import base64
 import json
 import os
 import socket
+import sys
 import time
 import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "python", "linkflow"))
 
 
 class TestRpcServerPairing(unittest.TestCase):

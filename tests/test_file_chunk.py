@@ -2,9 +2,12 @@ import base64
 import json
 import os
 import socket
+import sys
 import tempfile
 import time
 import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "python", "linkflow"))
 
 from core.protocol import LinkFlowProtocol
 from core.server import LinkFlowServer

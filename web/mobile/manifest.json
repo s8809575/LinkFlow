@@ -1,0 +1,22 @@
+{
+    "name": "LinkFlow",
+    "short_name": "LinkFlow",
+    "description": "LinkFlow 跨设备剪贴板同步与控制",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#f5f5f7",
+    "theme_color": "#0071e3",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "icon-1254.png",
+            "sizes": "1254x1254",
+            "type": "image/png"
+        },
+        {
+            "src": "icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

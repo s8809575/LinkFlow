@@ -1,0 +1,74 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+*.spec
+*.manifest
+*.exe
+*.dll
+*.so
+*.pkl
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# PyInstaller
+logs/src/python/build/
+logs/src/python/dist/
+
+# Upload / Temp
+logs/src/python/uploads/
+logs/src/python/uploads_temp/
+
+# Logs
+*.log
+logs/src/python/linkflow.log
+logs/src/python/launcher_log.txt
+logs/src/python/direct_test_log.txt
+logs/src/python/minimal_test_log.txt
+
+# ── Android ──
+*.apk
+*.aab
+*.jks
+*.keystore
+*.keystore.properties
+logs/src/android-app/.gradle/
+logs/src/android-app/app/build/
+logs/src/android-app/build/
+logs/src/android-app/local.properties
+logs/src/android-app/gradle/wrapper/gradle-wrapper.jar
+
+# ── General ──
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.orig
+
+# Environment / Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# OS files
+desktop.ini
+$RECYCLE.BIN/

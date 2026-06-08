@@ -1,0 +1,7 @@
+﻿{
+  "schema_version": "1.0.0",
+  "host_ipv4": "192.168.137.1",
+  "port": 8089,
+  "pairing_id": "pair-demo-001",
+  "key_b64": "AAAAAAAAAAAAAAAAAAAAAA=="
+}

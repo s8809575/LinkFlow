@@ -1,0 +1,11 @@
+==================================================
+测试开始, Python: 3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 13:17:27) [MSC v.1929 64 bit (AMD64)]
+EXE路径: C:\Users\scl\Desktop\LinkFlow\src\python\dist\LinkFlow\LinkFlow.exe
+文件存在: True
+
+启动程序...
+程序已启动
+程序输出: [PYI-25236:DEBUG] PyInstaller Bootloader 6.x
+程序已退出，退出码: 1
+
+测试结束

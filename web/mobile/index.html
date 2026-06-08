@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="LinkFlow">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <title>LinkFlow - PC助手</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background:#f0f2f5; min-height:100vh; overflow-x:hidden; }
+        .container { max-width:375px; margin:0 auto; background:#fff; min-height:100vh; }
+        
+        .header {
+            background: linear-gradient(180deg, #1d1d1f 0%, #2d2d30 100%);
+            color:white; padding:60px 24px 24px;
+        }
+        .status-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+        .conn-indicator {
+            padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600;
+            background:rgba(134,134,139,0.12); color:#86868b;
+        }
+        .conn-indicator.connected { background:rgba(52,199,89,0.12); color:#34c759; }
+        .conn-indicator.reconnecting { background:rgba(255,149,0,0.12); color:#ff9500; }
+        .title { font-size:32px; font-weight:700; letter-spacing:-1.2px; }
+        .subtitle { font-size:13px; color:rgba(255,255,255,0.7); margin-top:4px; }
+        .connect-row { display:flex; gap:10px; margin-top:16px; }
+        .connect-row input {
+            flex:1; padding:12px 15px; border:1px solid rgba(255,255,255,0.2);
+            border-radius:10px; background:rgba(255,255,255,0.1); color:white; font-size:14px; outline:none;
+        }
+        .connect-row input::placeholder { color:rgba(255,255,255,0.5); }
+        .connect-btn {
+            padding:12px 20px; background:#0071e3; color:white; border:none;
+            border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;
+        }
+        .connect-btn:active { opacity:0.8; }
+        .connect-btn.scanning {
+            background:#ff9500;
+            animation: pulse 1.5s infinite;
+        }
+        
+        /* IP地址输入框 */
+        .ip-input-section {
+            margin-top: 12px;
+        }
+        .ip-input-label {
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 8px;
+            display: block;
+            font-weight: 500;
+        }
+        .ip-connect-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .ip-input {
+            flex: 1;
+            padding: 14px 16px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px;
+            color: white;
+            font-size: 15px;
+            outline: none;
+            transition: all 0.2s ease;
+            -webkit-appearance: none;
+            min-width: 0;
+        }
+        .ip-input:focus {
+            border-color: #0071e3;
+            background: rgba(0,113,227,0.1);
+            box-shadow: 0 0 0 2px rgba(0,113,227,0.2);
+        }
+        .ip-input::placeholder {
+            color: rgba(255,255,255,0.4);
+        }
+        
+        .stats-card { margin:-16px 24px 0; background:white; border-radius:20px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.08); }
+        .stat-item { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+        .stat-item:last-child { margin-bottom:0; }
+        .stat-label { font-size:14px; }
+        .stat-value { font-weight:600; color:#0071e3; }
+        .track { width:120px; height:6px; background:#f0f0f0; border-radius:3px; overflow:hidden; }
+        .track-fill { height:100%; border-radius:3px; transition:width 0.5s ease; }
+        .cpu-fill { background:linear-gradient(90deg,#0071e3,#3399ff); }
+        .battery-fill { background:linear-gradient(90deg,#ff9500,#ffcc00); }
+        
+        .section-title { padding:24px 24px 12px; font-size:14px; font-weight:600; color:#86868b; }
+        
+        .modules { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; padding:0 24px 24px; }
+        .module-tile {
+            background:white; border-radius:16px; padding:24px 16px; display:flex; flex-direction:column;
+            align-items:center; gap:8px; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,0.05);
+            transition:transform 0.2s, box-shadow 0.2s;
+        }
+        .module-tile:active { transform:scale(0.96); background:#f8f8f8; }
+        .module-tile.disabled { opacity:0.5; pointer-events:none; }
+        .module-tile i { font-size:32px; }
+        .module-tile span { font-size:13px; color:#1d1d1f; }
+        
+        /* Overlay */
+        .overlay {
+            position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5);
+            z-index:100; display:none; align-items:flex-end;
+        }
+        .overlay.active { display:flex; }
+        .overlay-content {
+            background:white; width:100%; border-radius:30px 30px 0 0; padding:30px;
+            padding-bottom:env(safe-area-inset-bottom, 30px); animation:slideUp 0.3s ease; max-height:85vh; overflow-y:auto;
+        }
+        @keyframes slideUp { from { transform:translateY(100%); } to { transform:translateY(0); } }
+        .overlay-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+        .overlay-title { font-size:24px; font-weight:700; }
+        .overlay-close {
+            width:44px; height:44px; border-radius:50%; background:rgba(0,0,0,0.1);
+            display:flex; align-items:center; justify-content:center; font-size:24px; color:#666; cursor:pointer;
+        }
+        
+        /* File List */
+        .file-list { padding:0; }
+        .file-item {
+            display:flex; align-items:center; padding:16px; border-radius:12px; cursor:pointer;
+        }
+        .file-item:active { background:#f8f8f8; }
+        .file-icon { font-size:24px; margin-right:12px; }
+        .file-info { flex:1; overflow:hidden; }
+        .file-name { font-size:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .file-meta { font-size:12px; color:#86868b; margin-top:2px; }
+        .file-actions { display:flex; gap:8px; }
+        .file-action-btn {
+            padding:8px 16px; background:#0071e3; color:white; border:none; border-radius:8px;
+            font-size:12px; font-weight:600; cursor:pointer;
+        }
+        
+        /* Download Progress */
+        .download-progress {
+            background:#f5f5f7; border-radius:12px; padding:16px; margin-top:16px;
+        }
+        .download-progress-bar { height:8px; background:#e5e5ea; border-radius:4px; overflow:hidden; }
+        .download-progress-fill { height:100%; background:#0071e3; transition:width 0.3s ease; }
+        .download-progress-text { font-size:12px; color:#86868b; margin-top:8px; text-align:center; }
+        
+        /* Snapshot */
+        .snapshot-container { background:#000; border-radius:24px; overflow:hidden; min-height:250px; display:flex; align-items:center; justify-content:center; }
+        .snapshot-img { width:100%; height:auto; display:block; }
+        .snapshot-placeholder { color:#555; text-align:center; padding:60px 20px; }
+        .snapshot-loading { width:40px; height:40px; border:4px solid #333; border-top-color:#0071e3; border-radius:50%; animation:spin 1s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        
+        /* Toast */
+        .toast {
+            position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+            background:rgba(29,29,31,0.9); color:white; padding:12px 28px; border-radius:30px;
+            font-size:14px; font-weight:500; display:none; z-index:200; white-space:nowrap;
+        }
+        .toast.show { display:block; animation:fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity:0; transform:translateX(-50%) translateY(20px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+        
+        /* Unified Clipboard Display Area */
+        .clipboard-display-container {
+            margin-top:16px;
+            background:#fff;
+            border:1px solid #e5e5ea;
+            border-radius:16px;
+            overflow:hidden;
+            display:none;
+        }
+        .clipboard-display-header {
+            padding:12px 16px;
+            background:#fafafa;
+            border-bottom:1px solid #e5e5ea;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+        }
+        .clipboard-display-header-left {
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+        .clipboard-type-badge {
+            padding:4px 10px;
+            border-radius:6px;
+            font-size:12px;
+            font-weight:600;
+        }
+        .clipboard-type-badge.image {
+            background:#e3f2fd;
+            color:#1976d2;
+        }
+        .clipboard-type-badge.text {
+            background:#f3e5f5;
+            color:#7b1fa2;
+        }
+        .clipboard-size-info {
+            font-size:12px;
+            color:#86868b;
+        }
+        .clipboard-display-content {
+            padding:16px;
+            background:#fff;
+            min-height:120px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+        .clipboard-text-content {
+            width:100%;
+            font-size:14px;
+            line-height:1.6;
+            color:#1d1d1f;
+            white-space:pre-wrap;
+            word-break:break-word;
+            max-height:300px;
+            overflow-y:auto;
+        }
+        .clipboard-image-content {
+            width:100%;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+        }
+        .clipboard-image-content img {
+            max-width:100%;
+            max-height:350px;
+            border-radius:12px;
+            box-shadow:0 4px 16px rgba(0,0,0,0.08);
+            object-fit:contain;
+        }
+        .clipboard-loading {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            padding:40px 20px;
+        }
+        .clipboard-loading-spinner {
+            width:36px;
+            height:36px;
+            border:3px solid #e5e5ea;
+            border-top-color:#0071e3;
+            border-radius:50%;
+            animation:spin 0.8s linear infinite;
+        }
+        .clipboard-loading-text {
+            margin-top:12px;
+            font-size:13px;
+            color:#86868b;
+        }
+        .clipboard-empty {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            padding:40px 20px;
+            color:#86868b;
+        }
+        .clipboard-empty-icon {
+            font-size:40px;
+            margin-bottom:12px;
+            opacity:0.5;
+        }
+        .clipboard-empty-text {
+            font-size:14px;
+            text-align:center;
+        }
+        .clipboard-error {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            padding:40px 20px;
+            background:#fff5f5;
+        }
+        .clipboard-error-icon {
+            font-size:40px;
+            margin-bottom:12px;
+        }
+        .clipboard-error-text {
+            font-size:14px;
+            color:#ff3b30;
+            text-align:center;
+        }
+        .clipboard-display-footer {
+            padding:12px 16px;
+            background:#fafafa;
+            border-top:1px solid #e5e5ea;
+            display:flex;
+            gap:8px;
+        }
+        .clipboard-action-btn {
+            flex:1;
+            padding:10px 16px;
+            border:none;
+            border-radius:10px;
+            font-size:14px;
+            font-weight:600;
+            cursor:pointer;
+            transition:opacity 0.2s;
+        }
+        .clipboard-action-btn:active {
+            opacity:0.8;
+        }
+        .clipboard-action-btn.primary {
+            background:#0071e3;
+            color:white;
+        }
+        .clipboard-action-btn.secondary {
+            background:#f5f5f7;
+            color:#0071e3;
+            border:1px solid #0071e3;
+        }
+
+        .clipboard-history-toast {
+            position:fixed;
+            top:80px;
+            left:50%;
+            transform:translateX(-50%);
+            background:rgba(52,199,89,0.95);
+            color:white;
+            padding:10px 20px;
+            border-radius:20px;
+            font-size:13px;
+            font-weight:600;
+            z-index:300;
+            pointer-events:none;
+            animation:clipToastIn 0.3s ease, clipToastOut 0.3s ease 2s forwards;
+        }
+        @keyframes clipToastIn { from { opacity:0; transform:translateX(-50%) translateY(-10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+        @keyframes clipToastOut { from { opacity:1; } to { opacity:0; } }
+
+        /* Reconnect Button */
+        .reconnect-hint {
+            background:rgba(255,149,0,0.1); border-radius:12px; padding:12px 16px; margin-top:16px;
+            display:flex; align-items:center; justify-content:space-between;
+        }
+        .reconnect-hint-text { font-size:13px; color:#ff9500; }
+        .reconnect-hint-btn {
+            padding:8px 16px; background:#ff9500; color:white; border:none; border-radius:8px;
+            font-size:12px; font-weight:600; cursor:pointer;
+        }
+
+        /* 下载完成弹窗 */
+        .download-dialog-overlay {
+            position:fixed; top:0; left:0; right:0; bottom:0;
+            background:rgba(0,0,0,0.5); z-index:400;
+            display:flex; align-items:center; justify-content:center;
+            animation: fadeIn 0.2s;
+        }
+        .download-dialog {
+            width:85%; max-width:340px; background:#fff; border-radius:16px;
+            padding:24px; box-shadow:0 8px 32px rgba(0,0,0,0.15);
+        }
+        .download-dialog-icon { font-size:48px; text-align:center; margin-bottom:12px; }
+        .download-dialog-title { font-size:17px; font-weight:700; text-align:center; margin-bottom:8px; color:#1d1d1f; }
+        .download-dialog-path {
+            font-size:12px; color:#86868b; background:#f5f5f7; border-radius:8px;
+            padding:10px 12px; margin:12px 0; word-break:break-all; line-height:1.5;
+        }
+        .download-dialog-buttons { display:flex; gap:8px; margin-top:16px; }
+        .download-dialog-btn {
+            flex:1; padding:12px; border-radius:10px; font-size:14px; font-weight:600;
+            border:none; cursor:pointer; text-align:center;
+        }
+        .download-dialog-btn.primary { background:#0071e3; color:#fff; }
+        .download-dialog-btn.secondary { background:#f2f2f7; color:#1d1d1f; }
+
+        /* 剪贴板权限确认弹窗 */
+        .permission-dialog-overlay {
+            position:fixed; top:0; left:0; right:0; bottom:0;
+            background:rgba(0,0,0,0.6); z-index:999;
+            display:none; align-items:center; justify-content:center;
+            animation:fadeIn 0.2s ease;
+        }
+        .permission-dialog-overlay.active { display:flex; }
+        .permission-dialog {
+            background:#fff; border-radius:20px; padding:28px 24px 20px;
+            width:calc(100% - 60px); max-width:320px;
+            box-shadow:0 20px 60px rgba(0,0,0,0.3);
+            text-align:center;
+            animation:dialogSlideIn 0.3s ease;
+        }
+        @keyframes dialogSlideIn {
+            from { opacity:0; transform:scale(0.9) translateY(20px); }
+            to { opacity:1; transform:scale(1) translateY(0); }
+        }
+        .permission-dialog-icon {
+            font-size:48px; margin-bottom:12px;
+        }
+        .permission-dialog-title {
+            font-size:17px; font-weight:700; color:#1d1d1f; margin-bottom:6px;
+        }
+        .permission-dialog-desc {
+            font-size:13px; color:#86868b; margin-bottom:20px; line-height:1.5;
+        }
+        .permission-dialog-btns {
+            display:flex; gap:10px;
+        }
+        .permission-dialog-btn {
+            flex:1; padding:12px 0; border:none; border-radius:12px;
+            font-size:15px; font-weight:600; cursor:pointer; transition:opacity 0.15s;
+        }
+        .permission-dialog-btn:active { opacity:0.7; }
+        .permission-dialog-btn.deny {
+            background:#f5f5f7; color:#86868b; border:1px solid #e5e5ea;
+        }
+        .permission-dialog-btn.allow {
+            background:#0071e3; color:white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="status-row">
+                <span id="time">--:--</span>
+                <div class="conn-indicator" id="conn-indicator">● 未连接</div>
+            </div>
+            <h1 class="title">PC 状态</h1>
+            <p class="subtitle" id="device-status">等待连接...</p>
+            <!-- IP地址输入框 -->
+            <div class="ip-input-section">
+                <label class="ip-input-label">电脑IP地址</label>
+                <div class="ip-connect-row">
+                    <input type="text" id="pc-address" class="ip-input" placeholder="请输入电脑IP地址" value="192.168.72.161">
+                    <button class="connect-btn" id="connect-btn">连接</button>
+                </div>
+            </div>
+            <div class="reconnect-hint" id="reconnect-hint" style="display:none;">
+                <span class="reconnect-hint-text">连接已断开</span>
+                <button class="reconnect-hint-btn" id="reconnect-btn">重新连接</button>
+            </div>
+        </div>
+        
+        <div class="stats-card">
+            <div class="stat-item">
+                <span class="stat-label">PC 剩余电量 <span class="stat-value" id="battery-val">--%</span></span>
+                <div class="track"><div class="track-fill battery-fill" id="battery-bar" style="width:0%;"></div></div>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">CPU 负载频率 <span class="stat-value" id="cpu-val">0%</span></span>
+                <div class="track"><div class="track-fill cpu-fill" id="cpu-bar" style="width:0%;"></div></div>
+            </div>
+        </div>
+        
+        <div class="section-title">功能模块</div>
+        <div class="modules">
+            <div class="module-tile disabled" id="btn-files"><i>📂</i><span>文件传输</span></div>
+            <div class="module-tile disabled" id="btn-clipboard"><i>📋</i><span>剪贴板同步</span></div>
+            <div class="module-tile disabled" id="btn-monitor"><i>📸</i><span>远程监控</span></div>
+            <div class="module-tile disabled" id="btn-control"><i>⚡</i><span>应急控制</span></div>
+        </div>
+        
+        <!-- Files Overlay -->
+        <div class="overlay" id="files-overlay">
+            <div class="overlay-content">
+                <div class="overlay-header">
+                    <h2 class="overlay-title">📂 文件传输</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button id="upload-file-btn" onclick="uploadFile()" style="display:none; padding:8px 16px; background:#34c759; color:white; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; display:none; align-items:center; gap:4px;">📤 上传文件</button>
+                        <div class="overlay-close" id="close-files">×</div>
+                    </div>
+                </div>
+                <div class="path-bar" id="current-path" style="background:#f5f5f7; border-radius:8px; padding:12px 16px; font-size:14px; margin-bottom:16px; color:#86868b;">C:\</div>
+                <div id="drop-zone" style="background:#f0f9f1; border:2px dashed #34c759; border-radius:8px; padding:16px; text-align:center; margin-bottom:16px; font-size:13px; color:#34c759;">
+                    📁 上传文件前，请先在下方选择一个授权文件夹
+                </div>
+                <div class="file-list" id="file-list">
+                    <div style="text-align:center; padding:40px; color:#86868b;">加载中...</div>
+                </div>
+                <div class="download-progress" id="download-progress" style="display:none;">
+                    <div class="download-progress-bar">
+                        <div class="download-progress-fill" id="download-progress-fill" style="width:0%;"></div>
+                    </div>
+                    <div class="download-progress-text" id="download-progress-text">准备下载...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Clipboard Overlay -->
+        <div class="overlay" id="clipboard-overlay">
+            <div class="overlay-content">
+                <div class="overlay-header">
+                    <h2 class="overlay-title">📋 剪贴板同步</h2>
+                    <div class="overlay-close" id="close-clipboard">×</div>
+                </div>
+                
+                <div style="margin-bottom:20px;">
+                    <p style="color:#86868b; font-size:14px; margin-bottom:12px;">📥 获取 PC 剪贴板内容</p>
+                    <button id="get-pc-clipboard" style="width:100%; padding:16px; background:#0071e3; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">获取 PC 剪贴板</button>
+                    
+                    <div class="clipboard-display-container" id="pc-clipboard-display">
+                        <div class="clipboard-display-header">
+                            <div class="clipboard-display-header-left">
+                                <span class="clipboard-type-badge" id="pc-clipboard-type">📋</span>
+                                <span id="pc-clipboard-label">PC 剪贴板内容</span>
+                            </div>
+                            <span class="clipboard-size-info" id="pc-clipboard-info"></span>
+                        </div>
+                        <div class="clipboard-display-content" id="pc-clipboard-content">
+                        </div>
+                        <div class="clipboard-display-footer" id="pc-clipboard-footer" style="display:none;">
+                            <button class="clipboard-action-btn primary" id="copy-to-phone">复制到手机</button>
+                            <button class="clipboard-action-btn secondary" id="save-pc-image" style="display:none;">保存图片</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="border-top:1px solid #f0f0f0; padding-top:20px;">
+                    <p style="color:#86868b; font-size:14px; margin-bottom:12px;">📤 发送手机剪贴板到 PC</p>
+                    <button id="send-to-pc" style="width:100%; padding:16px; background:#ff9500; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">发送手机剪贴板</button>
+                    <div class="clipboard-display-container" id="phone-clipboard-preview" style="margin-top:16px;">
+                        <div class="clipboard-display-header">
+                            <div class="clipboard-display-header-left">
+                                <span class="clipboard-type-badge text">📱</span>
+                                <span>手机剪贴板内容</span>
+                            </div>
+                        </div>
+                        <div class="clipboard-display-content">
+                            <div class="clipboard-text-content" id="phone-clipboard-text"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 剪贴板权限确认弹窗 -->
+        <div class="permission-dialog-overlay" id="clipboard-permission-dialog">
+            <div class="permission-dialog">
+                <div class="permission-dialog-icon">📋</div>
+                <div class="permission-dialog-title">PC 请求获取您的剪贴板</div>
+                <div class="permission-dialog-desc">确认后，您手机剪贴板中的内容将发送到电脑端。是否允许？</div>
+                <div class="permission-dialog-btns">
+                    <button class="permission-dialog-btn deny" id="permission-deny">拒绝</button>
+                    <button class="permission-dialog-btn allow" id="permission-allow">允许</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Monitor Overlay -->
+        <div class="overlay" id="monitor-overlay">
+            <div class="overlay-content">
+                <div class="overlay-header">
+                    <h2 class="overlay-title">📸 远程监控</h2>
+                    <div class="overlay-close" id="close-monitor">×</div>
+                </div>
+                <button id="refresh-snapshot" style="width:100%; padding:16px; background:#0071e3; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer; margin-bottom:16px;">🔄 刷新截图</button>
+                <div class="snapshot-container" id="snapshot-container">
+                    <div class="snapshot-placeholder">
+                        <div class="snapshot-loading"></div>
+                        <p style="margin-top:16px;">点击刷新获取截图</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Control Overlay -->
+        <div class="overlay" id="control-overlay">
+            <div class="overlay-content">
+                <div class="overlay-header">
+                    <h2 class="overlay-title">⚡ 应急控制</h2>
+                    <div class="overlay-close" id="close-control">×</div>
+                </div>
+                <p style="color:#86868b; font-size:13px; margin-bottom:16px;">注意：睡眠操作可能导致连接暂时中断</p>
+                <div class="modules" style="padding:0;">
+                    <div class="module-tile" id="ctrl-mute"><i>🔇</i><span>静音</span></div>
+                    <div class="module-tile" id="ctrl-screen"><i>📱</i><span>息屏</span></div>
+                    <div class="module-tile" id="ctrl-sleep"><i>🌙</i><span>睡眠</span></div>
+                    <div class="module-tile" id="ctrl-restart"><i>🔄</i><span>重启</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        // 全局状态
+        let socket = null;
+        let isConnected = false;
+        let pending = new Map();
+        let controlCooldown = false;
+        let currentClipboardContent = '';
+        let lastPcAddress = '';
+        let reconnectAttempts = 0;
+        let maxReconnectAttempts = 10;
+        let heartbeatInterval = null;
+        let reconnectTimeout = null;
+        let pendingCommand = null; // 记录正在执行的控制命令
+        let reconnectDelay = 3000; // 重连延迟（毫秒），息屏/睡眠需要更长时间
+        
+        const toast = document.getElementById('toast');
+        const connIndicator = document.getElementById('conn-indicator');
+        const deviceStatus = document.getElementById('device-status');
+        const connectBtn = document.getElementById('connect-btn');
+        const addressInput = document.getElementById('pc-address');
+        const reconnectHint = document.getElementById('reconnect-hint');
+        const reconnectBtn = document.getElementById('reconnect-btn');
+        
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        }
+        
+        function updateConnectionStatus(connected, reconnecting = false) {
+            isConnected = connected;
+            
+            if (connected) {
+                connIndicator.textContent = '● 已连接';
+                connIndicator.classList.remove('reconnecting');
+                connIndicator.classList.add('connected');
+                deviceStatus.textContent = '已连接到 PC';
+                connectBtn.textContent = '断开';
+                reconnectHint.style.display = 'none';
+                reconnectAttempts = 0;
+                // 保存连接状态
+                localStorage.setItem('linkflow_connected', 'true');
+                localStorage.setItem('linkflow_address', lastPcAddress);
+            } else if (reconnecting) {
+                connIndicator.textContent = '● 重连中...';
+                connIndicator.classList.add('reconnecting');
+                connIndicator.classList.remove('connected');
+                deviceStatus.textContent = '正在尝试重新连接...';
+                connectBtn.textContent = '连接';
+            } else {
+                connIndicator.textContent = '● 未连接';
+                connIndicator.classList.remove('connected', 'reconnecting');
+                deviceStatus.textContent = '等待连接...';
+                connectBtn.textContent = '连接';
+                if (lastPcAddress) {
+                    reconnectHint.style.display = 'flex';
+                }
+                // 清除连接状态
+                localStorage.removeItem('linkflow_connected');
+            }
+            
+            updateModuleButtons();
+        }
+        
+        function updateModuleButtons() {
+            document.querySelectorAll('.module-tile').forEach(el => {
+                if (el.id && el.id.startsWith('btn-')) {
+                    isConnected ? el.classList.remove('disabled') : el.classList.add('disabled');
+                }
+            });
+        }
+        
+        function sendToBackend(data, timeout = 10000) {
+            return new Promise((resolve, reject) => {
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                    reject(new Error('未连接(socket=' + (socket ? socket.readyState : 'null') + ')'));
+                    return;
+                }
+                const reqId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+                const timeoutId = setTimeout(() => {
+                    pending.delete(reqId);
+                    reject(new Error('请求超时(10秒无响应)'));
+                }, timeout);
+                
+                pending.set(reqId, {
+                    resolve: d => { clearTimeout(timeoutId); resolve(d); },
+                    reject: e => { clearTimeout(timeoutId); reject(e); }
+                });
+                
+                try {
+                    socket.send(JSON.stringify({ req_id: reqId, ...data }));
+                    console.log('发送:', data.type, 'reqId:', reqId);
+                } catch (sendErr) {
+                    clearTimeout(timeoutId);
+                    pending.delete(reqId);
+                    reject(new Error('发送失败:' + sendErr.message));
+                }
+            });
+        }
+        
+        function startHeartbeat() {
+            stopHeartbeat();
+            heartbeatInterval = setInterval(() => {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    sendToBackend({ type: 'heartbeat' }, 3000).catch(() => {
+                        console.log('心跳失败，可能连接已断开');
+                    });
+                }
+            }, 5000);
+        }
+        
+        function stopHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+        }
+        
+        function tryReconnect() {
+            if (!lastPcAddress) return;
+            if (reconnectAttempts >= maxReconnectAttempts) {
+                updateConnectionStatus(false);
+                showToast('重连失败，请手动连接');
+                return;
+            }
+            
+            reconnectAttempts++;
+            updateConnectionStatus(false, true);
+            console.log(`尝试重连 (${reconnectAttempts}/${maxReconnectAttempts})...`);
+            
+            createSocket(lastPcAddress);
+        }
+        
+        function createSocket(address) {
+            try {
+                socket = new WebSocket('ws://' + address + ':8767');
+                var connectTimer = setTimeout(function() {
+                    if (!isConnected) {
+                        console.error('连接超时: ' + address);
+                        showToast('连接超时，请检查IP是否正确、PC防火墙是否放行端口8767');
+                        updateConnectionStatus(false);
+                        try { socket.close(); } catch(ex) {}
+                    }
+                }, 8000);
+                
+                socket.onopen = () => {
+                    clearTimeout(connectTimer);
+                    console.log('连接成功');
+                    lastPcAddress = address;
+                    updateConnectionStatus(true);
+
+                    // 通知 PC：手机已连接
+                    socket.send(JSON.stringify({
+                        type: 'device_connected',
+                        device: {
+                            name: '手机'
+                        }
+                    }));
+                    console.log('已发送 device_connected');
+
+                    showToast('连接成功');
+                    startHeartbeat();
+                };
+                
+                socket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.req_id && pending.has(data.req_id)) {
+                            pending.get(data.req_id).resolve(data);
+                            pending.delete(data.req_id);
+                            return;
+                        }
+                        
+                        if (data.type === 'sys_stats' && data.val) {
+                            const cpu = data.val.cpu_percent || 0;
+                            const battery = data.val.battery_percent || 0;
+                            
+                            document.getElementById('cpu-val').textContent = cpu + '%';
+                            document.getElementById('cpu-bar').style.width = cpu + '%';
+                            
+                            document.getElementById('battery-val').textContent = battery + '%';
+                            document.getElementById('battery-bar').style.width = battery + '%';
+                        }
+                        
+                        if (data.type === 'allowed_paths_updated' && data.paths) {
+                            console.log('收到授权路径更新:', data.paths);
+                            // 如果文件传输界面正在显示，自动刷新授权路径列表
+                            const filesOverlay = document.getElementById('files-overlay');
+                            if (filesOverlay.classList.contains('active')) {
+                                loadAllowedPaths();
+                                showToast('授权路径已更新');
+                            }
+                        }
+                        
+                        if (data.type === 'request_phone_clipboard') {
+                            sendClipboardToPC();
+                        }
+                        
+                        if (data.type === 'clipboard_update') {
+                            console.log('[剪贴板] 收到实时推送:', data);
+                            if (data.source === 'pc' && data.content) {
+                                showClipboardToast('📋 收到PC剪贴板更新');
+                                if (document.getElementById('clipboard-overlay').classList.contains('active')) {
+                                    displayPCClipboardContent(data);
+                                }
+                            }
+                        }
+                        
+                        if (data.type === 'clipboard_history_event') {
+                            if (data.content && document.getElementById('clipboard-overlay').classList.contains('active')) {
+                                displayPCClipboardContent(data);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('解析错误:', e);
+                    }
+                };
+                
+                socket.onclose = (event) => {
+                    clearTimeout(connectTimer);
+                    console.log('连接关闭, code:', event.code, 'reason:', event.reason);
+                    stopHeartbeat();
+                    
+                    // 如果是睡眠、重启导致的断开，延迟重连
+                    if (pendingCommand && ['sleep', 'restart'].includes(pendingCommand)) {
+                        console.log('控制命令断开，等待恢复...');
+                        updateConnectionStatus(false, true);
+                        showToast('正在等待设备恢复...');
+                        
+                        // 延迟重连，给电脑时间唤醒
+                        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                        reconnectTimeout = setTimeout(() => {
+                            tryReconnect();
+                        }, reconnectDelay);
+                    } else if (event.code !== 1000 && lastPcAddress) {
+                        // 意外断开，尝试重连
+                        updateConnectionStatus(false, true);
+                        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                        reconnectTimeout = setTimeout(tryReconnect, reconnectDelay);
+                    } else if (!lastPcAddress) {
+                        // 初次连接失败
+                        updateConnectionStatus(false);
+                        showToast('连接失败(code:' + event.code + ')，请确认IP和端口');
+                    } else {
+                        // 手动关闭，不重连
+                        pendingCommand = null;
+                        updateConnectionStatus(false);
+                    }
+                };
+                
+                socket.onerror = (e) => {
+                    clearTimeout(connectTimer);
+                    console.error('连接错误:', e);
+                    showToast('无法连接到PC，请检查IP和防火墙');
+                    updateConnectionStatus(false);
+                };
+            } catch (e) {
+                console.error('创建连接失败:', e);
+                showToast('连接失败: 地址格式错误');
+                updateConnectionStatus(false);
+            }
+        }
+        
+        function connectToPC() {
+            if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+                pendingCommand = null; // 清除pending状态
+                socket.close(1000, '手动关闭'); // 正常关闭
+                return;
+            }
+            
+            const address = addressInput.value.trim();
+            if (!address) { showToast('请输入IP地址'); return; }
+            
+            // 重置重连状态
+            reconnectAttempts = 0;
+            pendingCommand = null;
+            reconnectDelay = 3000;
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            
+            showToast('正在连接...');
+            createSocket(address);
+        }
+        
+        function manualReconnect() {
+            if (!lastPcAddress) {
+                showToast('请输入IP地址');
+                return;
+            }
+            reconnectAttempts = 0;
+            pendingCommand = null;
+            reconnectDelay = 3000;
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            showToast('正在重新连接...');
+            createSocket(lastPcAddress);
+        }
+        
+        function openOverlay(id) {
+            document.getElementById(id).classList.add('active');
+            if (id === 'files-overlay') loadAllowedPaths();
+        }
+        
+        function closeOverlay(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+        
+        async function loadAllowedPaths() {
+            const list = document.getElementById('file-list');
+            const pathBar = document.getElementById('current-path');
+            const uploadBtn = document.getElementById('upload-file-btn');
+            const dropZone = document.getElementById('drop-zone');
+            const pathSelected = localStorage.getItem('linkflow_path_selected');
+
+            allowedPathPerms = {};
+            currentPathPerm = null;
+            pathBar.textContent = '授权路径';
+            list.innerHTML = '<div style="text-align:center; padding:40px; color:#86868b;">加载中...</div>';
+
+            // 上传按钮：在路径列表界面隐藏
+            uploadBtn.style.display = 'none';
+
+            // 绿色提示框：仅在从未选择过授权路径时显示
+            if (pathSelected === 'true') {
+                dropZone.style.display = 'none';
+            } else {
+                dropZone.style.display = 'block';
+            }
+            
+            if (!isConnected) {
+                list.innerHTML = '<div style="text-align:center; padding:40px; color:#ff3b30;">请先连接到PC</div>';
+                return;
+            }
+            
+            try {
+                console.log('开始获取授权路径列表...');
+                const data = await sendToBackend({ type: 'get_allowed_paths' });
+                console.log('收到授权路径响应:', data);
+                
+                if (data.type === 'allowed_paths' && data.paths) {
+                    if (data.paths.length === 0) {
+                        list.innerHTML = '<div style="text-align:center; padding:40px; color:#86868b;">暂无授权路径</div>';
+                    } else {
+                        list.innerHTML = data.paths.map(entry => {
+                            const path = typeof entry === 'string' ? entry : (entry && entry.path);
+                            const perm = typeof entry === 'string' ? 'rw' : ((entry && entry.perm) || 'rw');
+                            if (!path) return '';
+                            allowedPathPerms[path] = perm;
+                            const displayName = path.split(/[\\/]/).filter(Boolean).pop() || path;
+                            const meta = perm === 'r' ? '授权目录（只读）' : '授权目录（读写）';
+                            const escapedPath = path.replace(/\\/g, '\\\\');
+                            return `
+                            <div class="file-item" onclick="loadFiles('${escapedPath}')">
+                                <span class="file-icon">📁</span>
+                                <div class="file-info">
+                                    <div class="file-name">${displayName}</div>
+                                    <div class="file-meta">${meta}</div>
+                                </div>
+                            </div>
+                        `;
+                        }).filter(Boolean).join('');
+                    }
+                } else if (data.error) {
+                    list.innerHTML = `<div style="text-align:center; padding:40px; color:#ff3b30;">${data.error}</div>`;
+                } else {
+                    list.innerHTML = '<div style="text-align:center; padding:40px; color:#ff3b30;">获取授权路径失败</div>';
+                }
+            } catch (e) {
+                console.error('获取授权路径失败:', e);
+                if (e.message && e.message.startsWith('未连接')) {
+                    list.innerHTML = '<div style="text-align:center; padding:40px; color:#ff3b30;">连接已断开，请重新连接</div>';
+                } else if (e.message && e.message.startsWith('请求超时')) {
+                    list.innerHTML = '<div style="text-align:center; padding:40px; color:#ff3b30;">请求超时，请检查网络</div>';
+                } else {
+                    list.innerHTML = `<div style="text-align:center; padding:40px; color:#ff3b30;">获取授权路径失败: ${e.message}</div>`;
+                }
+            }
+        }
+        
+        async function loadFiles(path) {
+            const list = document.getElementById('file-list');
+            const pathBar = document.getElementById('current-path');
+            const uploadBtn = document.getElementById('upload-file-btn');
+            const dropZone = document.getElementById('drop-zone');
+            currentBrowsePath = path;
+            pathBar.innerHTML = `<span style="color:#0071e3; cursor:pointer;" onclick="loadAllowedPaths()">📂 授权路径</span> / ${path}`;
+            list.innerHTML = '<div style="text-align:center; padding:40px; color:#86868b;">加载中...</div>';
+
+            // 记录用户已选择过授权路径
+            localStorage.setItem('linkflow_path_selected', 'true');
+            dropZone.style.display = 'none';
+
+            // 根据权限显示/隐藏上传按钮
+            currentPathPerm = getPathPermission(path);
+            uploadBtn.style.display = (currentPathPerm !== 'r') ? 'inline-flex' : 'none';
+            
+            try {
+                const data = await sendToBackend({ type: 'get_files', path: path });
+                if (data.type === 'file_list' && data.list) {
+                    if (data.list.length === 0) {
+                        list.innerHTML = '<div style="text-align:center; padding:40px; color:#86868b;">文件夹为空</div>';
+                    } else {
+                        list.innerHTML = data.list.map(f => `
+                            <div class="file-item" onclick="handleFileClick('${f.name}', ${f.is_dir}, '${f.path.replace(/\\/g, '\\\\')}')">
+                                <span class="file-icon">${f.is_dir ? '📁' : '📄'}</span>
+                                <div class="file-info">
+                                    <div class="file-name">${f.name}</div>
+                                    <div class="file-meta">${f.is_dir ? '文件夹' : formatSize(f.size)}</div>
+                                </div>
+                                ${!f.is_dir ? `<button class="file-action-btn" onclick="event.stopPropagation(); downloadFile('${f.path.replace(/\\/g, '\\\\')}', '${f.name}', ${f.size})">下载</button>` : ''}
+                            </div>
+                        `).join('');
+                    }
+                } else if (data.error) {
+                    list.innerHTML = `<div style="text-align:center; padding:40px; color:#ff3b30;">${data.error}</div>`;
+                }
+            } catch (e) {
+                list.innerHTML = '<div style="text-align:center; padding:40px; color:#ff3b30;">加载失败，请检查连接</div>';
+                console.error(e);
+            }
+        }
+        
+        window.handleFileClick = function(name, isDir, path) {
+            if (isDir) {
+                loadFiles(path);
+            }
+        };
+
+        function getPathPermission(path) {
+            // 在 allowedPathPerms 中查找最长匹配的父路径
+            var normPath = path.replace(/\\/g, '/');
+            var bestMatch = null;
+            var bestLen = 0;
+            for (var key in allowedPathPerms) {
+                var normKey = key.replace(/\\/g, '/');
+                if (normPath.startsWith(normKey) && normKey.length > bestLen) {
+                    bestMatch = key;
+                    bestLen = normKey.length;
+                }
+            }
+            return bestMatch ? allowedPathPerms[bestMatch] : 'rw';
+        }
+
+        function formatSize(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        // 文件下载功能
+        let downloadingFile = null;
+        let downloadChunks = [];
+        let downloadSize = 0;
+        let downloadReceived = 0;
+        let currentBrowsePath = '';
+        let allowedPathPerms = {};
+        let currentPathPerm = null;
+
+        async function downloadFile(filePath, fileName, fileSize) {
+            if (downloadingFile) {
+                showToast('已有文件正在下载');
+                return;
+            }
+            
+            const progressDiv = document.getElementById('download-progress');
+            const progressFill = document.getElementById('download-progress-fill');
+            const progressText = document.getElementById('download-progress-text');
+            
+            progressDiv.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = '准备下载...';
+            
+            downloadingFile = true;
+            downloadChunks = [];
+            downloadSize = fileSize;
+            downloadReceived = 0;
+            
+            const chunkSize = 512 * 1024; // 512KB per chunk
+            let offset = 0;
+            
+            try {
+                while (offset < fileSize) {
+                    const data = await sendToBackend({
+                        type: 'get_file_chunk',
+                        path: filePath,
+                        offset: offset,
+                        chunk_size: chunkSize
+                    });
+                    
+                    if (data.type === 'file_chunk' && data.data_b64) {
+                        const chunk = atob(data.data_b64);
+                        downloadChunks.push(chunk);
+                        downloadReceived += chunk.length;
+                        offset = data.offset + chunk.length;
+                        
+                        const percent = Math.round((downloadReceived / fileSize) * 100);
+                        progressFill.style.width = percent + '%';
+                        progressText.textContent = `下载中... ${formatSize(downloadReceived)} / ${formatSize(fileSize)} (${percent}%)`;
+                        
+                        if (data.eof) break;
+                    } else {
+                        throw new Error('下载失败');
+                    }
+                }
+                
+                // 合并并保存
+                const blob = new Blob(downloadChunks.map(c => new Uint8Array(Array.from(c).map(ch => ch.charCodeAt(0)))));
+                const mimeType = getMimeType(fileName);
+
+                // 优先使用原生桥接保存（APK 内）
+                if (window.LinkFlowNative && window.LinkFlowNative.saveFile) {
+                    const base64 = await blobToBase64(blob);
+                    window.LinkFlowNative.saveFile(base64, fileName, mimeType);
+                    progressText.textContent = '已保存到下载目录';
+                } else {
+                    // 浏览器降级：触发下载
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    progressText.textContent = '下载完成！';
+                    showToast('文件下载完成');
+                }
+                
+            } catch (e) {
+                console.error('下载失败:', e);
+                progressText.textContent = '下载失败';
+                showToast('下载失败: ' + e.message);
+            } finally {
+                setTimeout(() => {
+                    progressDiv.style.display = 'none';
+                }, 2000);
+                downloadingFile = false;
+            }
+        }
+        
+        async function loadSnapshot() {
+            const container = document.getElementById('snapshot-container');
+            container.innerHTML = '<div class="snapshot-placeholder"><div class="snapshot-loading"></div><p style="margin-top:16px;">正在获取截图...</p></div>';
+            
+            try {
+                const data = await sendToBackend({ type: 'get_snapshot' });
+                if (data.image_b64) {
+                    container.innerHTML = `<img class="snapshot-img" src="data:image/png;base64,${data.image_b64}" alt="PC截图">`;
+                } else if (data.error) {
+                    container.innerHTML = `<div class="snapshot-placeholder"><p style="color:#ff3b30;">截图失败</p><p style="color:#86868b; margin-top:8px; font-size:12px;">${data.error}</p></div>`;
+                }
+            } catch (e) {
+                container.innerHTML = '<div class="snapshot-placeholder"><p style="color:#ff3b30;">获取截图失败</p><p style="color:#86868b; margin-top:8px; font-size:12px;">' + e.message + '</p></div>';
+                console.error(e);
+            }
+        }
+        
+        async function getClipboard() {
+            const displayContainer = document.getElementById('pc-clipboard-display');
+            const displayContent = document.getElementById('pc-clipboard-content');
+            const displayFooter = document.getElementById('pc-clipboard-footer');
+            const typeBadge = document.getElementById('pc-clipboard-type');
+            const clipboardLabel = document.getElementById('pc-clipboard-label');
+            const sizeInfo = document.getElementById('pc-clipboard-info');
+            const copyBtn = document.getElementById('copy-to-phone');
+            const saveBtn = document.getElementById('save-pc-image');
+
+            displayContainer.style.display = 'block';
+            displayFooter.style.display = 'none';
+            typeBadge.textContent = '📋';
+            typeBadge.className = 'clipboard-type-badge';
+            clipboardLabel.textContent = 'PC 剪贴板内容';
+            sizeInfo.textContent = '';
+
+            displayContent.innerHTML = `
+                <div class="clipboard-loading">
+                    <div class="clipboard-loading-spinner"></div>
+                    <div class="clipboard-loading-text">正在获取剪贴板...</div>
+                </div>
+            `;
+
+            try {
+                const data = await sendToBackend({ type: 'get_clipboard' });
+
+                if (!data.success) {
+                    displayContent.innerHTML = `
+                        <div class="clipboard-empty">
+                            <div class="clipboard-empty-icon">📭</div>
+                            <div class="clipboard-empty-text">PC 剪贴板为空</div>
+                        </div>
+                    `;
+                    showToast('剪贴板为空');
+                    return;
+                }
+
+                if (data.content_type === 'image') {
+                    currentClipboardContent = data;
+                    const format = (data.format || 'png').toUpperCase();
+                    const sizeKB = (data.size / 1024).toFixed(1);
+                    
+                    typeBadge.textContent = '🖼️';
+                    typeBadge.className = 'clipboard-type-badge image';
+                    clipboardLabel.textContent = '图片内容';
+                    sizeInfo.textContent = `${format} • ${sizeKB} KB`;
+
+                    displayContent.innerHTML = `
+                        <div class="clipboard-image-content">
+                            <img src="data:image/${data.format || 'png'};base64,${data.data_base64}" alt="PC剪贴板图片">
+                        </div>
+                    `;
+
+                    copyBtn.style.display = 'none';
+                    saveBtn.style.display = 'block';
+                    displayFooter.style.display = 'flex';
+
+                    showToast('图片获取成功');
+                }
+                else if (data.content_type === 'text' || data.content) {
+                    currentClipboardContent = data.content;
+                    const textLength = data.content.length;
+                    
+                    typeBadge.textContent = '📝';
+                    typeBadge.className = 'clipboard-type-badge text';
+                    clipboardLabel.textContent = '文本内容';
+                    sizeInfo.textContent = `${textLength} 字符`;
+
+                    displayContent.innerHTML = `
+                        <div class="clipboard-text-content">${escapeHtml(data.content)}</div>
+                    `;
+
+                    copyBtn.style.display = 'block';
+                    saveBtn.style.display = 'none';
+                    displayFooter.style.display = 'flex';
+
+                    showToast('文本获取成功');
+                }
+                else {
+                    displayContent.innerHTML = `
+                        <div class="clipboard-empty">
+                            <div class="clipboard-empty-icon">📭</div>
+                            <div class="clipboard-empty-text">PC 剪贴板内容为空</div>
+                        </div>
+                    `;
+                    showToast('剪贴板为空');
+                }
+
+            } catch (e) {
+                console.error('获取剪贴板失败:', e);
+                displayContent.innerHTML = `
+                    <div class="clipboard-error">
+                        <div class="clipboard-error-icon">⚠️</div>
+                        <div class="clipboard-error-text">` + e.message + `</div>
+                    </div>
+                `;
+                showToast('获取失败');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function copyToPhone() {
+            if (!currentClipboardContent) return;
+            
+            try {
+                if (typeof currentClipboardContent === 'string') {
+                    try {
+                        await navigator.clipboard.writeText(currentClipboardContent);
+                    } catch (clipErr) {
+                        var ta = document.createElement('textarea');
+                        ta.value = currentClipboardContent;
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                    }
+                    showToast('已复制到手机剪贴板');
+                } else if (currentClipboardContent.data_base64) {
+                    var blob = await base64ToBlob(currentClipboardContent.data_base64, 'image/' + (currentClipboardContent.format || 'png'));
+                    try {
+                        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                        showToast('图片已复制到剪贴板');
+                    } catch (imgErr) {
+                        savePcImage();
+                        showToast('复制失败，已尝试下载图片');
+                    }
+                }
+            } catch (e) {
+                showToast('复制失败');
+            }
+        }
+        
+        function displayPCClipboardContent(data) {
+            const displayContainer = document.getElementById('pc-clipboard-display');
+            const displayContent = document.getElementById('pc-clipboard-content');
+            const displayFooter = document.getElementById('pc-clipboard-footer');
+            const typeBadge = document.getElementById('pc-clipboard-type');
+            const clipboardLabel = document.getElementById('pc-clipboard-label');
+            const sizeInfo = document.getElementById('pc-clipboard-info');
+            const copyBtn = document.getElementById('copy-to-phone');
+            const saveBtn = document.getElementById('save-pc-image');
+
+            displayContainer.style.display = 'block';
+            displayFooter.style.display = 'flex';
+            saveBtn.style.display = 'none';
+            copyBtn.style.display = 'block';
+
+            if (data.content_type === 'image' && data.data_base64) {
+                currentClipboardContent = data;
+                const format = (data.format || 'png').toUpperCase();
+                const sizeKB = ((data.size || 0) / 1024).toFixed(1);
+
+                typeBadge.textContent = '🖼️';
+                typeBadge.className = 'clipboard-type-badge image';
+                clipboardLabel.textContent = '图片内容';
+                sizeInfo.textContent = format + ' • ' + sizeKB + ' KB';
+
+                displayContent.innerHTML = '<div class="clipboard-image-content"><img src="data:image/' + (data.format || 'png') + ';base64,' + data.data_base64 + '" alt="PC剪贴板图片"></div>';
+                copyBtn.style.display = 'none';
+                saveBtn.style.display = 'block';
+            } else if (data.content) {
+                currentClipboardContent = data.content;
+                const textLength = data.content.length;
+
+                typeBadge.textContent = '📝';
+                typeBadge.className = 'clipboard-type-badge text';
+                clipboardLabel.textContent = '文本内容';
+                sizeInfo.textContent = textLength + ' 字符';
+
+                displayContent.innerHTML = '<div class="clipboard-text-content">' + escapeHtml(data.content) + '</div>';
+            }
+        }
+
+        async function base64ToBlob(base64, mimeType) {
+            const response = await fetch(`data:${mimeType};base64,${base64}`);
+            return await response.blob();
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        function getMimeType(fileName) {
+            const ext = fileName.split('.').pop().toLowerCase();
+            const mimeMap = {
+                'pdf': 'application/pdf',
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'gif': 'image/gif',
+                'svg': 'image/svg+xml',
+                'webp': 'image/webp',
+                'txt': 'text/plain',
+                'json': 'application/json',
+                'xml': 'application/xml',
+                'html': 'text/html',
+                'css': 'text/css',
+                'js': 'application/javascript',
+                'zip': 'application/zip',
+                'rar': 'application/x-rar-compressed',
+                '7z': 'application/x-7z-compressed',
+                'tar': 'application/x-tar',
+                'gz': 'application/gzip',
+                'mp4': 'video/mp4',
+                'mp3': 'audio/mpeg',
+                'wav': 'audio/wav',
+                'doc': 'application/msword',
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'xls': 'application/vnd.ms-excel',
+                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'ppt': 'application/vnd.ms-powerpoint',
+                'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            };
+            return mimeMap[ext] || 'application/octet-stream';
+        }
+        
+        function savePcImage() {
+            if (!currentClipboardContent || !currentClipboardContent.data_base64) {
+                showToast('没有可保存的图片');
+                return;
+            }
+
+            const format = currentClipboardContent.format || 'png';
+            const mimeType = 'image/' + format;
+            const fileName = 'LinkFlow_' + Date.now() + '.' + format;
+            const base64 = currentClipboardContent.data_base64;
+
+            showToast('正在保存图片...');
+
+            // 检查原生桥接是否可用（由 MainActivity.onPageFinished 注入的标志）
+            if (window.__lf_native__) {
+                try {
+                    // 优先使用 saveImage（新版 APK，含原生 Toast 反馈）
+                    if (LinkFlowNative.saveImage) {
+                        LinkFlowNative.saveImage(base64, fileName, mimeType);
+                    } else if (LinkFlowNative.saveFile) {
+                        // 旧版 APK 兜底
+                        LinkFlowNative.saveFile(base64, fileName, mimeType);
+                        showToast('已保存到下载目录');
+                    }
+                    // onImageSaved / onFileSaved 回调会提供结果反馈
+                } catch (e) {
+                    console.error('原生保存异常:', e);
+                    showToast('保存失败: ' + (e.message || '未知错误'));
+                }
+            } else {
+                // 纯浏览器环境：blob URL 下载
+                try {
+                    var byteString = atob(base64);
+                    var byteArray = new Uint8Array(byteString.length);
+                    for (var i = 0; i < byteString.length; i++) {
+                        byteArray[i] = byteString.charCodeAt(i);
+                    }
+                    var blob = new Blob([byteArray], { type: mimeType });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(function() {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 100);
+                    showToast('图片已保存');
+                } catch (e) {
+                    console.error('浏览器保存异常:', e);
+                    showToast('保存失败: ' + (e.message || '未知错误'));
+                }
+            }
+        }
+
+        // 原生桥接回调：图片保存结果（由 MainActivity.saveImage 触发）
+        window.onImageSaved = function(success, path, fileName) {
+            if (success) {
+                showToast('已保存: ' + fileName);
+            } else {
+                showToast('保存失败: ' + (fileName || '未知错误'));
+            }
+        };
+        
+        let isReadingClipboard = false;
+        let pendingPermissionReqId = null;
+
+        function showClipboardPermissionDialog() {
+            closeOverlay('files-overlay');
+            closeOverlay('monitor-overlay');
+            closeOverlay('control-overlay');
+            document.getElementById('clipboard-permission-dialog').classList.add('active');
+        }
+
+        function handlePermissionAllow() {
+            document.getElementById('clipboard-permission-dialog').classList.remove('active');
+            sendPermissionResponse(true);
+            openOverlay('clipboard-overlay');
+            setTimeout(function() {
+                sendClipboardToPC();
+            }, 300);
+        }
+
+        function handlePermissionDeny() {
+            document.getElementById('clipboard-permission-dialog').classList.remove('active');
+            sendPermissionResponse(false);
+            showToast('已拒绝剪贴板请求');
+        }
+
+        function sendPermissionResponse(allowed) {
+            var msg = { type: 'phone_clipboard_result', success: allowed };
+            if (!allowed) {
+                msg.error = 'user_denied';
+                msg.message = '用户拒绝了剪贴板读取请求';
+            }
+            sendToBackend(msg).catch(function(e) {
+                console.error('发送权限响应失败:', e);
+            });
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // 尝试通过原生桥接读取剪贴板（APK WebView 专用，绕过浏览器限制）
+        function tryNativeClipboard() {
+            try {
+                if (window.LinkFlowNative && typeof window.LinkFlowNative.getClip === 'function') {
+                    var text = window.LinkFlowNative.getClip();
+                    return text || null;
+                }
+            } catch (e) {
+                console.log('原生桥接剪贴板读取失败:', e.message);
+            }
+            return null;
+        }
+
+        function showPasteFallback(sendBtn, previewContainer, previewContent, originalText) {
+            isReadingClipboard = true;
+            sendBtn.disabled = true;
+            sendBtn.textContent = '请粘贴...';
+
+            previewContainer.style.display = 'block';
+            previewContent.innerHTML = `
+                <textarea id="paste-area" placeholder="请在此处粘贴剪贴板内容..."
+                    style="width:100%; min-height:80px; border:2px dashed #0071e3; border-radius:8px;
+                    padding:12px; font-size:14px; resize:vertical; outline:none; font-family:inherit;"></textarea>
+            `;
+
+            var pasteArea = document.getElementById('paste-area');
+            pasteArea.focus();
+
+            var done = false;
+            var cleanup = function() {
+                if (done) return;
+                done = true;
+                isReadingClipboard = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = originalText;
+                pasteArea.removeEventListener('paste', onPaste);
+                pasteArea.removeEventListener('input', onInput);
+            };
+
+            var onPaste = function() {
+                setTimeout(function() {
+                    var content = pasteArea.value.trim();
+                    if (content) {
+                        cleanup();
+                        sendTextToPC(content, previewContainer, previewContent);
+                    }
+                }, 100);
+            };
+
+            var onInput = function() {
+                var content = pasteArea.value.trim();
+                if (content) {
+                    cleanup();
+                    sendTextToPC(content, previewContainer, previewContent);
+                }
+            };
+
+            pasteArea.addEventListener('paste', onPaste);
+            pasteArea.addEventListener('input', onInput);
+        }
+
+        function sendTextToPC(text, previewContainer, previewContent) {
+            previewContent.textContent = text;
+            sendToBackend({ type: 'send_clipboard_to_pc', content: text, content_type: 'text' }).then(function(data) {
+                if (data && data.success !== false) {
+                    showToast('发送成功！PC剪贴板已更新');
+                } else {
+                    showToast('发送失败');
+                }
+            }).catch(function() {
+                showToast('发送失败');
+            });
+        }
+
+        async function sendClipboardToPC() {
+            if (isReadingClipboard) {
+                showToast('正在处理，请稍候');
+                return;
+            }
+
+            const sendBtn = document.getElementById('send-to-pc');
+            const previewContainer = document.getElementById('phone-clipboard-preview');
+            const previewContent = document.getElementById('phone-clipboard-text');
+            const originalText = sendBtn.textContent;
+
+            if (!navigator.clipboard || !navigator.clipboard.readText) {
+                // 尝试原生桥接读取剪贴板（APK内WebView专用）
+                var nativeText = tryNativeClipboard();
+                if (nativeText) {
+                    previewContainer.style.display = 'block';
+                    previewContent.textContent = nativeText;
+                    var data = await sendToBackend({ type: 'send_clipboard_to_pc', content: nativeText, content_type: 'text' });
+                    if (data && data.success !== false) {
+                        showToast('发送成功！PC剪贴板已更新');
+                    } else {
+                        showToast('发送失败');
+                    }
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = originalText;
+                    return;
+                }
+                showPasteFallback(sendBtn, previewContainer, previewContent, originalText);
+                return;
+            }
+
+            isReadingClipboard = true;
+
+            sendBtn.disabled = true;
+            sendBtn.textContent = '读取中...';
+
+            var timedOut = false;
+            var safetyTimer = setTimeout(function() {
+                timedOut = true;
+                isReadingClipboard = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = originalText;
+                showPasteFallback(sendBtn, previewContainer, previewContent, originalText);
+            }, 6000);
+
+            try {
+                var text = null;
+                var imageBase64 = null, imageFormat = null, imageSize = 0;
+                var readFailed = false;
+
+                if (navigator.clipboard.read) {
+                    try {
+                        const clipboardItems = await navigator.clipboard.read();
+                        await delay(100);
+
+                        for (const item of clipboardItems) {
+                            if (item.types.includes('text/plain') && !text) {
+                                try {
+                                    const textBlob = await item.getType('text/plain');
+                                    text = await textBlob.text();
+                                } catch (e) {
+                                    console.log('读取文本类型失败:', e.message);
+                                }
+                            }
+
+                            const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+                            const foundType = imageTypes.find(t => item.types.includes(t));
+                            if (foundType && !imageBase64) {
+                                try {
+                                    const imageBlob = await item.getType(foundType);
+                                    imageBase64 = await blobToBase64(imageBlob);
+                                    imageFormat = foundType.split('/')[1].toUpperCase();
+                                    imageSize = imageBlob.size;
+                                } catch (e) {
+                                    console.log('读取图片类型失败:', e.message);
+                                }
+                            }
+                        }
+                    } catch (readErr) {
+                        console.log('read() 失败:', readErr.message);
+                        readFailed = true;
+                    }
+                } else {
+                    readFailed = true;
+                }
+
+                if (!text && !imageBase64 && readFailed) {
+                    try {
+                        text = await navigator.clipboard.readText();
+                    } catch (textErr) {
+                        console.log('readText 降级也失败:', textErr.message);
+                    }
+                    // 原生桥接兜底：网页API全部失败时，尝试Android原生剪贴板
+                    if (!text) {
+                        var nativeText = tryNativeClipboard();
+                        if (nativeText) text = nativeText;
+                    }
+                }
+
+                if (imageBase64) {
+                    previewContainer.style.display = 'block';
+                    previewContent.innerHTML = `
+                        <div style="text-align:center;">
+                            <img src="data:image/${imageFormat.toLowerCase()};base64,${imageBase64}" style="max-width:100%; max-height:200px; border-radius:8px;" alt="图片预览">
+                            <div style="margin-top:8px; font-size:12px; color:#86868b;">图片 ${(imageSize / 1024).toFixed(1)} KB</div>
+                        </div>
+                    `;
+
+                    const data = await sendToBackend({
+                        type: 'send_clipboard_to_pc',
+                        content: '[图片]',
+                        content_type: 'image',
+                        data_base64: imageBase64,
+                        format: imageFormat.toLowerCase(),
+                        size: imageSize
+                    });
+
+                    if (data && data.success !== false) {
+                        showToast('图片发送成功！');
+                    } else {
+                        showToast('发送失败');
+                    }
+                } else if (text) {
+                    previewContainer.style.display = 'block';
+                    previewContent.textContent = text;
+
+                    const data = await sendToBackend({ type: 'send_clipboard_to_pc', content: text, content_type: 'text' });
+
+                    if (data && data.success !== false) {
+                        showToast('发送成功！PC剪贴板已更新');
+                    } else {
+                        showToast('发送失败');
+                    }
+                } else {
+                    previewContainer.style.display = 'block';
+                    previewContent.innerHTML = `
+                        <div style="color:#86868b; text-align:center; padding:20px;">
+                            <div style="font-size:32px; margin-bottom:8px; opacity:0.5;"></div>
+                            <div>手机剪贴板为空</div>
+                        </div>
+                    `;
+                    showToast('手机剪贴板为空');
+                }
+            } catch (e) {
+                console.error('发送剪贴板失败:', e);
+                showPasteFallback(sendBtn, previewContainer, previewContent, originalText);
+            } finally {
+                clearTimeout(safetyTimer);
+                if (!timedOut) {
+                    isReadingClipboard = false;
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = originalText;
+                }
+            }
+        }
+
+        async function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function autoSendClipboardToPC() {
+            try {
+                var text = null;
+                try {
+                    text = await navigator.clipboard.readText();
+                } catch (e) {
+                    text = tryNativeClipboard();
+                }
+                if (!text) {
+                    return;
+                }
+
+                showToast('PC请求剪贴板，正在发送...');
+
+                const data = await sendToBackend({ type: 'send_clipboard_to_pc', content: text });
+
+                if (data && data.success !== false) {
+                    showToast('剪贴板已发送到PC');
+                }
+            } catch (e) {
+                console.error('自动发送剪贴板失败:', e);
+            }
+        }
+        
+        function showClipboardToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'clipboard-history-toast';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        }
+        
+        async function uploadFile() {
+            if (!currentBrowsePath) {
+                showToast('请先选择一个授权文件夹');
+                return;
+            }
+
+            if (getPathPermission(currentBrowsePath) === 'r') {
+                showToast('该文件夹为只读权限，无法上传');
+                return;
+            }
+
+            const progressDiv = document.getElementById('download-progress');
+            const progressFill = document.getElementById('download-progress-fill');
+            const progressText = document.getElementById('download-progress-text');
+            const resetUploadProgress = () => {
+                progressFill.style.width = '0%';
+                progressText.textContent = '';
+                progressDiv.style.display = 'none';
+            };
+            
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.onchange = async function(e) {
+                try {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    // 文件大小校验（最大 500MB）
+                    const maxSize = 500 * 1024 * 1024;
+                    if (file.size > maxSize) {
+                        showToast('文件过大（超过500MB），请压缩后重试');
+                        return;
+                    }
+                    if (file.size === 0) {
+                        showToast('文件为空，无法上传');
+                        return;
+                    }
+                    
+                    // 阶段1：读取文件
+                    progressDiv.style.display = 'block';
+                    progressText.textContent = '正在读取文件...';
+                    progressFill.style.width = '20%';
+                    
+                    const arrayBuffer = await file.arrayBuffer();
+                    const bytes = new Uint8Array(arrayBuffer);
+                    
+                    // 阶段2：计算校验值
+                    progressText.textContent = '正在计算校验值...';
+                    progressFill.style.width = '30%';
+                
+                    let crc = 0xFFFFFFFF;
+                    const crcTable = [];
+                    for (let n = 0; n < 256; n++) {
+                        let c = n;
+                        for (let k = 0; k < 8; k++) {
+                            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+                        }
+                        crcTable[n] = c;
+                    }
+                    for (let i = 0; i < bytes.length; i++) {
+                        crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+                    }
+                    crc = (crc ^ 0xFFFFFFFF) >>> 0;
+                
+                    // 阶段3：初始化上传
+                    progressText.textContent = '正在初始化上传...';
+                    progressFill.style.width = '35%';
+                    showToast('正在上传 ' + file.name + ' (' + formatSize(file.size) + ')...');
+                    
+                    const initData = await sendToBackend({ type: 'init_upload', filename: file.name, size: bytes.length, crc32: crc, target_path: currentBrowsePath }, 15000);
+                    if (initData.status !== 'ok') {
+                        resetUploadProgress();
+                        var initErrMsg = initData.message || '未知错误';
+                        if (initErrMsg === 'PATH_NOT_ALLOWED') {
+                            showToast('上传失败：当前文件夹不在授权范围内，请重新授权文件夹');
+                        } else if (initErrMsg === 'TARGET_PATH_REQUIRED') {
+                            showToast('上传失败：请先选择目标文件夹');
+                        } else {
+                            showToast('上传初始化失败：' + initErrMsg);
+                        }
+                        return;
+                    }
+                    const sessionId = initData.session_id;
+                
+                    // 阶段4：上传文件块
+                    const chunkSize = 512 * 1024;
+                    let offset = 0;
+                    while (offset < bytes.length) {
+                        const chunk = bytes.slice(offset, offset + chunkSize);
+                        let b64 = '';
+                        const blockSize = 30000;
+                        for (let i = 0; i < chunk.length; i += blockSize) {
+                            const block = chunk.slice(i, i + blockSize);
+                            b64 += btoa(String.fromCharCode.apply(null, block));
+                        }
+                    
+                        const chunkData = await sendToBackend({ type: 'write_upload_chunk', session_id: sessionId, offset: offset, data_b64: b64 }, 30000);
+                        if (chunkData.status !== 'ok') {
+                            resetUploadProgress();
+                            showToast('上传分片失败：' + (chunkData.message || '服务器拒绝'));
+                            return;
+                        }
+                        offset += chunk.length;
+                    
+                        const percent = 35 + Math.round((offset / bytes.length) * 60);
+                        progressFill.style.width = percent + '%';
+                        progressText.textContent = `上传中... ${Math.round((offset / bytes.length) * 100)}%`;
+                    }
+                
+                    // 阶段5：提交文件
+                    progressText.textContent = '正在提交文件...';
+                    progressFill.style.width = '95%';
+                    
+                    const commitData = await sendToBackend({ type: 'commit_upload', session_id: sessionId }, 30000);
+                    if (commitData.status === 'ok') {
+                        progressFill.style.width = '100%';
+                        progressText.textContent = '上传完成';
+                        setTimeout(resetUploadProgress, 1500);
+                        showToast('上传成功');
+                        loadFiles(currentBrowsePath);
+                    } else {
+                        resetUploadProgress();
+                        var commitErrMsg = commitData.message || '未知错误';
+                        if (commitErrMsg === 'CRC_MISMATCH') {
+                            showToast('上传失败：文件校验不匹配，请重试');
+                        } else if (commitErrMsg === 'INCOMPLETE_UPLOAD') {
+                            showToast('上传失败：文件不完整，请重试');
+                        } else {
+                            showToast('上传失败：' + commitErrMsg);
+                        }
+                    }
+                } catch (uploadErr) {
+                    console.error('上传异常:', uploadErr);
+                    resetUploadProgress();
+                    showToast('上传失败：' + (uploadErr.message || '未知错误'));
+                }
+            };
+            input.onerror = function() {
+                showToast('文件选择失败，请重试');
+            };
+            input.click();
+        }
+        
+        let controlCooldownTime = 1500;
+        
+        function sendControlCommand(command) {
+            if (!isConnected) { showToast('请先连接'); return; }
+            if (controlCooldown) { showToast('操作太频繁'); return; }
+            
+            controlCooldown = true;
+            const btnMap = { 'mute': 'ctrl-mute', 'screen_off': 'ctrl-screen', 'sleep': 'ctrl-sleep', 'restart': 'ctrl-restart' };
+            const btn = document.getElementById(btnMap[command]);
+            if (btn) { btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
+            
+            const msgMap = { 'mute': '静音已执行', 'screen_off': '息屏已执行', 'sleep': '已睡眠', 'restart': '正在重启' };
+            const warningMap = { 'mute': '', 'screen_off': '', 'sleep': '注意：睡眠后可能断开', 'restart': '' };
+            
+            // 睡眠、重启命令会断开连接
+            const disconnectCommands = ['sleep', 'restart'];
+            if (disconnectCommands.includes(command)) {
+                pendingCommand = command;
+                reconnectDelay = 5000; // 这些命令需要更长的重连延迟
+                showToast(warningMap[command]);
+            } else {
+                showToast('正在执行...');
+            }
+            
+            sendToBackend({ type: 'system_control', command: command }).then((data) => {
+                console.log('控制命令响应:', data);
+                if (data && data.success !== false) {
+                    showToast(msgMap[command] || '已执行');
+                } else {
+                    showToast('执行失败');
+                    pendingCommand = null;
+                }
+            }).catch((err) => {
+                console.error('控制命令失败:', err);
+                showToast('执行失败');
+                pendingCommand = null;
+            }).finally(() => {
+                setTimeout(() => {
+                    controlCooldown = false;
+                    if (btn) { btn.style.opacity = '1'; btn.style.pointerEvents = 'auto'; }
+                }, controlCooldownTime);
+            });
+        }
+        
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('time').textContent = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+        }
+        
+        // 初始化
+        updateTime();
+        setInterval(updateTime, 1000);
+        
+        // 页面加载时恢复连接状态
+        function restoreConnection() {
+            const wasConnected = localStorage.getItem('linkflow_connected');
+            const savedAddress = localStorage.getItem('linkflow_address');
+            
+            if (wasConnected === 'true' && savedAddress) {
+                lastPcAddress = savedAddress;
+                addressInput.value = savedAddress;
+                showToast('正在恢复连接...');
+                // 延迟连接，确保页面完全加载
+                setTimeout(() => {
+                    createSocket(savedAddress);
+                }, 500);
+            }
+        }
+        
+        // 启动恢复连接
+        restoreConnection();
+        
+        // 事件绑定
+        connectBtn.addEventListener('click', connectToPC);
+        reconnectBtn.addEventListener('click', manualReconnect);
+        addressInput.addEventListener('keypress', e => { if (e.key === 'Enter') connectToPC(); });
+        
+        document.getElementById('btn-files').addEventListener('click', () => { if (!isConnected) { showToast('请先连接'); return; } openOverlay('files-overlay'); });
+        document.getElementById('btn-clipboard').addEventListener('click', () => { if (!isConnected) { showToast('请先连接'); return; } openOverlay('clipboard-overlay'); });
+        document.getElementById('btn-monitor').addEventListener('click', () => { if (!isConnected) { showToast('请先连接'); return; } openOverlay('monitor-overlay'); loadSnapshot(); });
+        document.getElementById('btn-control').addEventListener('click', () => { if (!isConnected) { showToast('请先连接'); return; } openOverlay('control-overlay'); });
+        
+        document.getElementById('close-files').addEventListener('click', () => closeOverlay('files-overlay'));
+        document.getElementById('close-clipboard').addEventListener('click', () => closeOverlay('clipboard-overlay'));
+        document.getElementById('close-monitor').addEventListener('click', () => closeOverlay('monitor-overlay'));
+        document.getElementById('close-control').addEventListener('click', () => closeOverlay('control-overlay'));
+        
+        document.getElementById('get-pc-clipboard').addEventListener('click', getClipboard);
+        document.getElementById('copy-to-phone').addEventListener('click', copyToPhone);
+        document.getElementById('send-to-pc').addEventListener('click', sendClipboardToPC);
+        document.getElementById('save-pc-image').addEventListener('click', savePcImage);
+        document.getElementById('refresh-snapshot').addEventListener('click', loadSnapshot);
+
+        document.getElementById('permission-allow').addEventListener('click', handlePermissionAllow);
+        document.getElementById('permission-deny').addEventListener('click', handlePermissionDeny);
+        
+        document.getElementById('ctrl-mute').addEventListener('click', () => sendControlCommand('mute'));
+        document.getElementById('ctrl-screen').addEventListener('click', () => sendControlCommand('screen_off'));
+        document.getElementById('ctrl-sleep').addEventListener('click', () => sendControlCommand('sleep'));
+        document.getElementById('ctrl-restart').addEventListener('click', () => sendControlCommand('restart'));
+        
+        console.log('LinkFlow Mobile v2.0 初始化完成');
+
+        // 文件保存完成回调（由 Android NativeBridge 触发）
+        window.onFileSaved = function(savedPath, fileName) {
+            showDownloadDialog(savedPath, fileName);
+        };
+
+        // 显示下载完成弹窗（含路径和一键查看按钮）
+        function showDownloadDialog(savedPath, fileName) {
+            var overlay = document.createElement('div');
+            overlay.className = 'download-dialog-overlay';
+            overlay.innerHTML = 
+                '<div class="download-dialog">' +
+                    '<div class="download-dialog-icon">&#x2705;</div>' +
+                    '<div class="download-dialog-title">下载完成</div>' +
+                    '<div style="font-size:14px; text-align:center; color:#3a3a3c;">' + escapeHtml(fileName) + '</div>' +
+                    '<div class="download-dialog-path">' + escapeHtml(savedPath) + '</div>' +
+                    '<div class="download-dialog-buttons">' +
+                        '<button class="download-dialog-btn primary" id="dl-view-btn">立即查看</button>' +
+                        '<button class="download-dialog-btn secondary" id="dl-close-btn">关闭</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+
+            document.getElementById('dl-view-btn').onclick = function() {
+                if (window.LinkFlowNative && window.LinkFlowNative.openDownloadsFolder) {
+                    window.LinkFlowNative.openDownloadsFolder();
+                }
+                overlay.remove();
+            };
+            document.getElementById('dl-close-btn').onclick = function() { overlay.remove(); };
+            overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+        };
+
+        window.addEventListener('beforeunload', () => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'device_disconnected'
+                }));
+            }
+        });
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then(function() {
+                console.log('[PWA] Service Worker 注册成功');
+            }).catch(function(e) {
+                console.log('[PWA] Service Worker 注册失败:', e);
+            });
+        }
+    </script>
+</body>
+</html>
